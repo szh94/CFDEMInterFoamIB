@@ -1,0 +1,45 @@
+# OpenFOAM compilation outputs
+*.o
+*.so
+*.a
+*.dep
+
+# wmake build directories
+Make/linux*
+Make/linux64*
+Make/mingw*
+Make/darwin*
+platforms/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.orig
+
+# OS generated
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# OpenFOAM case outputs (if tutorials are run)
+[0-9]*
+[0-9]*.[0-9]*
+postProcessing/
+VTK/
+processor*/
+log.*
+*.log
+
+# Animation assets (hosted on GitHub Releases)
+animations/*.gif
+
+# CMake / alternative builds
+build/
+cmake-build-*/

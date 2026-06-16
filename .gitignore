@@ -11,6 +11,9 @@ Make/mingw*
 Make/darwin*
 platforms/
 
+# Claude Code
+.claude/
+
 # IDE / editor
 .vscode/
 .idea/
@@ -38,7 +41,7 @@ log.*
 *.log
 
 # Animation assets (hosted on GitHub Releases)
-animations/*.gif
+animations/
 
 # CMake / alternative builds
 build/

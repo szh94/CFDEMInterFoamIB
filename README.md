@@ -15,17 +15,17 @@ This case is an application of using the DEM clump. A clump consisting of overla
 
 ## Animations of some cases:  
 ### Sphere settling (corresponds to the tutorial case "single_sphere"):  
-<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/settling.gif" width="80%" height="80%">  
+<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/settling.gif" width="40%">  
 Notice: this animation has a time period of 0.8 s. In the tutorial case "single_sphere", only 0.01 s is set (tutorial/single_sphere/CFD/system/controlDict line 26: endTime 0.01) just for the validation of successful installation. The user should change the endtime into 0.8 s to get the same result as the above animation.
 
 ### Fish settling (corresponds to the tutorial case "multi_sphere_fish"): 
-<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/fish.gif" width="80%" height="80%">  
+<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/fish.gif" width="40%">  
 
 ### Seepage ( not included in tutorial cases):  
-<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/seepage10mb.gif" width="80%" height="80%">  
+<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/seepage10mb.gif" width="40%">  
 
 ### Overtopping (not included in tutorial cases):  
-<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/overtop.gif" width="80%" height="80%">  
+<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/overtop.gif" width="40%">  
 
 ## Literature about this solver:  
 [Shen, Z., Wang, G., Huang, D., & Jin, F. (2022). A resolved CFD-DEM coupling model for modeling two-phase fluids interaction with irregularly shaped particles. Journal of Computational Physics, 448, 110695.](https://www.sciencedirect.com/science/article/pii/S0021999121005908)

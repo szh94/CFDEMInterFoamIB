@@ -63,7 +63,7 @@ int main(int argc, char *argv[])
     cloudInterIB20 particleCloud(mesh);
 
     #include "createFvOptions.H"
-    #include "correctPhi.H"
+    #include "createCorrectPhi.H"
 
     turbulence->validate();
 

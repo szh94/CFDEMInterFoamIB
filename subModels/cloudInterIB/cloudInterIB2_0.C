@@ -228,7 +228,7 @@ bool Foam::cloudInterIB20::evolve
             // 获取颗粒坐标，半径，速度，id等信息，具体取决于dataexchagemodel
             getDEMdata();
             // 对颗粒中心所在单元进行定位，获取其单元ID。定位算法是OF的meshsearch.H,八叉树octree
-            locateM().findCell(NULL,positions_,cellIDs_,numberOfParticles());
+            locateM().findCell(NULL,fieldsToDEM[idPos()],cellIDs_,numberOfParticles());
             Info <<"locate model done\n";
             // 计算voidfraction
             voidFractionM().setvoidFraction(NULL,voidfractions_,particleWeights_,particleVolumes_,particleV_);
@@ -249,7 +249,6 @@ bool Foam::cloudInterIB20::evolve
             {
                 impForces_[index][i] = 0;
                 expForces_[index][i] = 0;
-                DEMForces_[index][i] = 0;
             }
         }
         for (int i=0;i<nrForceModels();i++)

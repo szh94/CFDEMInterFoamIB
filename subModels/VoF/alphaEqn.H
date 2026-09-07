@@ -41,8 +41,8 @@
             // divU,
             // (Su + divU*min(alpha1(), scalar(1)))(),
             zeroField(),
-            1,
-            0
+            oneField(),
+            zeroField()
         );
         alpha1 = min(alpha1 , alphamax);
         alpha1 = max(alpha1 , alphamin);

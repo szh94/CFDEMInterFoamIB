@@ -9,6 +9,12 @@ Make/linux*
 Make/linux64*
 Make/mingw*
 Make/darwin*
+
+# CFDEM solver subModel build directories (nested under subModels/)
+subModels/Make/linux*
+subModels/Make/linux64*
+subModels/lnInclude/
+
 platforms/
 
 # Claude Code
@@ -39,6 +45,17 @@ VTK/
 processor*/
 log.*
 *.log
+log.liggghts
+log_*
+
+# OpenFOAM generated meshes (blockMesh output)
+**/constant/polyMesh/
+
+# LIGGGHTS/CFDEM DEM post-processing output
+**/DEM/post/
+
+# consolidated case log directories
+tutorial/*/log/
 
 # Animation assets (hosted on GitHub Releases)
 animations/

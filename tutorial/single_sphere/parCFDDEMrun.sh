@@ -15,7 +15,8 @@ source $CFDEM_SRC_DIR/lagrangian/cfdemParticle/etc/functions.sh
 #--------------------------------------------------------------------------------#
 #- define variables
 casePath="$(dirname "$(readlink -f ${BASH_SOURCE[0]})")"
-logpath=$casePath
+logpath="$casePath/log"
+mkdir -p "$logpath"
 headerText="CFDEM_IB"
 logfileName="log_$headerText"
 # solverName="myinterib20"

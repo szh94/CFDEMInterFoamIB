@@ -1,6 +1,6 @@
 echo                    both
-log                     ../DEM/log_run.txt
-thermo_log              ../DEM/log_thermo.txt
+log                     ../log/log_run.txt
+thermo_log              ../log/log_thermo.txt
 
 #变量定义
 variable            xmin           equal   0.0

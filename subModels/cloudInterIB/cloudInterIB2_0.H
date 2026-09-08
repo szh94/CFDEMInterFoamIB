@@ -123,6 +123,7 @@ public:
             volScalarField&,
             volScalarField&,
             volVectorField&,
+            surfaceScalarField&,
             volScalarField&,
             volScalarField&,
             volScalarField&,

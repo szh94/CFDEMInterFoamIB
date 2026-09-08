@@ -103,6 +103,38 @@ a time, rerun from a clean initial state, and compare particle trajectory,
 forces, phase distribution, and conservation behavior. Values outside the
 expected range should only be used after verification against a reference case.
 
+### Divergence correction after imposing particle velocity
+
+Set the option in `CFD/constant/couplingProperties`:
+
+```text
+doDivCor                1;
+```
+
+`doDivCor 1` projects the particle-corrected velocity back to a divergence-free
+field by solving
+
+\[
+\nabla^2\phi_{IB}=\nabla\cdot\mathbf U,
+\qquad
+\mathbf U\leftarrow\mathbf U-\nabla\phi_{IB}.
+\]
+
+The solver also updates the face flux `phi` and pressure consistently. This is
+recommended near the air-water interface because it reduces continuity and
+VOF phase-volume errors. `doDivCor 0` skips this projection and retains the
+original particle-velocity correction behavior, but the resulting velocity is
+not guaranteed to be divergence-free.
+
+Enabling the option requires `CFD/0/phiIB` and a `phiIB` solver entry in
+`CFD/system/fvSolution`.
+
+Comparison animations:
+
+- [`settling.gif`](settling.gif): result without the `phi` correction.
+- [`settling_withPhiCorrection.gif`](settling_withPhiCorrection.gif): result
+  after adding the `phi` correction consistently with the velocity projection.
+
 During the run, monitor the log for fatal errors, floating-point exceptions,
 unbounded phase fractions, rapidly increasing residuals, and excessive
 Courant/interface Courant numbers.

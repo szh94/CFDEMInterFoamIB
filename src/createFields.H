@@ -307,6 +307,8 @@ volScalarField phiIB
     ),
     mesh
 );
+mesh.setFluxRequired(phiIB.name());
+
 volScalarField udivmid
 (
     IOobject

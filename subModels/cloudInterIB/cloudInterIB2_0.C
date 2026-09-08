@@ -331,6 +331,7 @@ void Foam::cloudInterIB20::calcVelocityCorrection
     volScalarField& rho,
     volScalarField& p,
     volVectorField& U,
+    surfaceScalarField& phi,
     volScalarField& phiIB,
     volScalarField& voidfraction,
     volScalarField& udivmid,
@@ -351,28 +352,35 @@ void Foam::cloudInterIB20::calcVelocityCorrection
     scalar doDivCor = couplingProperties_.lookupOrDefault<scalar>("doDivCor",0.);
     // scalar 必须用小数0.,不能用整数0
     // dictionary.lookup("a")|lookupOrDefault("a","b")
-       
+
     if(doDivCor == 1)
     {
-        Info << "doConvCorr == 1, phiIBEqn" << endl;
+        Info << "doDivCor == 1, phiIBEqn" << endl;
+        surfaceScalarField phiUncorrected
+        (
+            "phiUncorrected",
+            fvc::flux(U)
+        );
         fvScalarMatrix phiIBEqn
         (
             fvm::laplacian(phiIB) == fvc::div(U)
         );
-        if(phiIB.needReference()) 
+        if(phiIB.needReference())
         {
              phiIBEqn.setReference(pRefCell_, pRefValue_);
-        }  
-        phiIBEqn.solve();    
-        // U = fvc::reconstruct
-        // (fvc::flux(U) - fvc::snGrad(phiIB)*mesh_.magSf());
-        U = U - fvc::grad(phiIB);        
+        }
+        phiIBEqn.solve();
+        // Project both the cell-centred velocity and its face flux with the
+        // same correction. Keeping phi unchanged here would leave the VOF
+        // transport flux inconsistent with the corrected velocity field.
+        U = U - fvc::grad(phiIB);
+        phi = phiUncorrected - phiIBEqn.flux();
         U.correctBoundaryConditions();
         p = p + rho * phiIB/U.mesh().time().deltaT();
         p.correctBoundaryConditions();
 
-        Info << "End correct p and U" << endl;
-    }    
+        Info << "End correct p, U and phi" << endl;
+    }
 //---------------------------------------------------------------
 //checkinterface
     // if (couplingProperties_.found("checkinterface"))

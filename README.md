@@ -18,7 +18,7 @@ This case is an application of using the DEM clump. A clump consisting of overla
 
 ## Animations of some cases:  
 ### Sphere settling (corresponds to the tutorial case "single_sphere"):  
-<img src="docs/settling.gif" width="40%">
+<img src="docs/settling_withPhiCorrection.gif" width="40%">
 
 For the current simulation settings and run procedure, see the [single-sphere tutorial guide](docs/single_sphere_set.md).
 

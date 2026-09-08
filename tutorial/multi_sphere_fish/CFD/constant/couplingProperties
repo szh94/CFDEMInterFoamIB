@@ -153,6 +153,6 @@ Exdrag 0;
 Coe_V_local             0.9;
 Coe_V_global            1.0;
 
-doDivCor                0;
+doDivCor                1;
 dragcorrcoe             1.0;
 // ************************************************************************* //

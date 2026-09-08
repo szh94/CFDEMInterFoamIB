@@ -316,6 +316,7 @@ int main(int argc, char *argv[])
             rho,
             p,
             U,
+            phi,
             phiIB,
             voidfraction,
             udivmid,

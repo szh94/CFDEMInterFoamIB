@@ -3,7 +3,7 @@ A resolved CFD-DEM coupling solver for two-phase fluid interaction with particle
 
 1. Before installing this solver, ensure that the CFDEM+LIGGGHTS+OpenFOAM are correctly installed.  
 **A Chinese tutorial to install the CFDEM+LIGGGHTS+OpenFOAM:**  
-[如何安装 CFDEM+OpenFOAM+LIGGGHTS（COOL 三件套）](docs/base_cn.md)
+[How to install CFDEM+OpenFOAM+LIGGGHTS: Chinese version](docs/base_cn.md)
 2. To install this solver, you just need to run the "remake" file after you successfully installed the previous codes.
 
 ## WSL environment setup

@@ -50,9 +50,19 @@ cd $HOME
 mkdir CFDEM
 cd CFDEM
 git clone https://github.com/CFDEMproject/CFDEMcoupling-PUBLIC.git
+
+# 使用经过验证的稳定版 CFDEM
+CFDEMCOMMIT=1b78322bf4330bbf8b5277302907488187fd3263
+cd $HOME/CFDEM/CFDEMcoupling-PUBLIC
+git log -1 --oneline
+if [ "$(git rev-parse HEAD)" != "$CFDEMCOMMIT" ]; then
+    git checkout "$CFDEMCOMMIT"
+fi
+# 再次确认当前 HEAD
+git log -1 --oneline
 ```
 
-上面命令在 `$HOME` 路径下创建了名为CFDEM的文件夹，然后进入CFDEM文件夹，获取github上的CFDEM源代码。
+上面命令在 `$HOME` 路径下创建了名为CFDEM的文件夹，然后进入CFDEM文件夹，获取github上的CFDEM源代码。这里不能直接使用仓库的最新提交，必须先切换到经过验证的稳定 commit `1b78322bf4330bbf8b5277302907488187fd3263`，再继续后续安装。
 
 类似的，创建LIGGGHTS文件夹并下载源码：
 
@@ -76,10 +86,17 @@ git clone https://github.com/ParticulateFlow/LPP.git lpp
 ```bash
 # 查看 CFDEM 要求的 OpenFOAM 版本
 grep "OFversion=" $HOME/CFDEM/CFDEMcoupling-PUBLIC/src/lagrangian/cfdemParticle/cfdTools/versionInfo.H
-# 示例输出：word OFversion="6-commit-af7d7f427be78e9b9beb6aceca8fe7d5d4636876";
+# 稳定版输出：word OFversion="5.x-commit-538044ac05c4672b37c7df607dca1116fa88df88";
 ```
 
-上面命令会打印出类似 `word OFversion="6-commit-af7d7f427be78e9b9beb6aceca8fe7d5d4636876"` 这样的内容。这串东西的意思是：需要OpenFOAM-6版本，并且要切换到commit号 `af7d7f427be78e9b9beb6aceca8fe7d5d4636876` 这个特定提交。这个commit号是唯一的，确保你下载的代码和CFDEM完全兼容。
+稳定版 CFDEM 应打印 `word OFversion="5.x-commit-538044ac05c4672b37c7df607dca1116fa88df88"`。这表示需要 OpenFOAM-5.x，并且必须切换到 commit `538044ac05c4672b37c7df607dca1116fa88df88`。当前安装基准不使用 OpenFOAM-6 组合，因为它与此项目存在兼容问题。
+
+本教程固定使用以下经过验证的匹配组合：
+
+```text
+CFDEMversion="commit-1b78322bf4330bbf8b5277302907488187fd3263"
+OFversion="5.x-commit-538044ac05c4672b37c7df607dca1116fa88df88"
+```
 
 我们可以用命令自动解析出这两个关键参数，然后自动下载：
 
@@ -103,8 +120,13 @@ cd OpenFOAM
 git clone https://github.com/OpenFOAM/OpenFOAM-${OFVERSION}.git
 git clone https://github.com/OpenFOAM/ThirdParty-${OFVERSION}.git
 cd OpenFOAM-${OFVERSION}
-# 切换到与 CFDEM 匹配的 commit，确保版本兼容
-git checkout ${OFCOMMIT}
+# 检查并切换到与 CFDEM 匹配的 commit
+git log -1 --oneline
+if [ "$(git rev-parse HEAD)" != "$OFCOMMIT" ]; then
+    git checkout "$OFCOMMIT"
+fi
+# 再次确认当前 HEAD
+git log -1 --oneline
 ```
 
 这里有两个小提示：一是不要用 `git://` 协议而用 `https://` 替代，有些网络环境封了git协议的端口。二是ThirdParty仓库虽然叫第三方，但里面只有编译脚本，不包含Scotch等工具的源码本身，后面编译的时候会说到怎么处理。
@@ -139,6 +161,13 @@ sudo apt-get install python3-numpy
 ```
 
 老教程里写的 `python-numpy` 在高版本Ubuntu上会报 `E: Unable to locate package python-numpy`，因为Python2已经淘汰了，现在统一用 `python3-numpy`。
+
+项目提供的 PNG 序列转 GIF 工具还依赖 Pillow。使用 Ubuntu 软件包安装可以避免新版系统 Python 的 `externally-managed-environment` 错误：
+
+```bash
+sudo apt-get install python3-pil
+python3 -c "from PIL import Image; print('Pillow is available')"
+```
 
 
 4. 编译安装
@@ -175,7 +204,7 @@ cd $WM_PROJECT_DIR
 ./Allwmake
 ```
 
-老教程里写的 `foamSystemCheck` 在OpenFOAM-5.x之后的版本就不存在了，会报 `command not found`。不用管它，只要 `echo $WM_PROJECT_DIR` 有输出，说明环境已经就绪。
+`foamSystemCheck` 在某些 OpenFOAM 版本中不存在，执行时可能会报 `command not found`。无需依赖该命令，只要 `echo $WM_PROJECT_DIR` 有正确输出，说明环境已经就绪。
 
 `./Allwmake` 就是OpenFOAM的编译命令。这个过程非常漫长，从几十分钟到若干小时都有可能，取决于你的电脑配置。如果编译过程中出错停下来，最常见的就是 `can't cd to scotch_6.0.3/src`，按上面说的软链接方法处理就好。
 
@@ -252,5 +281,89 @@ ls $CFDEM_PROJECT_DIR/platforms/linux64GccDPInt32Opt/bin/
 - 整个过程中多次用 `echo "...">> ~/.bashrc` 向文件追加内容，如果脚本跑了多次，可能会重复追加导致混乱。如果重装，建议先检查bashrc里是不是已经有了对应条目。
 - `OFVERSION` 和 `OFCOMMIT` 已经存入了 `~/.bashrc`，后面的步骤可以跨终端使用这些变量。
 - WSL下编译OpenFOAM确实比较耗时，建议电脑插着电源、不要休眠，让他慢慢跑。
+
+
+5. Q&A
+
+5.1 高版本 GCC 编译 OpenFOAM-5.x 报错怎么办？
+
+使用高版本 GCC 编译 OpenFOAM-5.x 时，可能需要进行以下两项兼容性修改。
+
+第一项是修改：
+
+`OpenFOAM/OpenFOAM-5.x/src/OpenFOAM/containers/Lists/PackedList/PackedListI.H`
+
+将约第 550 行的：
+
+```cpp
+return *this;
+```
+
+修改为：
+
+```cpp
+return;
+```
+
+第二项是在下面两个文件中注释 `Reaction` 的非 const `name()` 接口：
+
+`OpenFOAM/OpenFOAM-5.x/src/thermophysicalModels/specie/reaction/Reactions/Reaction/ReactionI.H`
+
+```cpp
+// template<class ReactionThermo>
+// inline word& Reaction<ReactionThermo>::name()
+// {
+//     return name_;
+// }
+```
+
+`OpenFOAM/OpenFOAM-5.x/src/thermophysicalModels/specie/reaction/Reactions/Reaction/Reaction.H`
+
+```cpp
+// inline word& name();
+```
+
+5.2 编译前如何检查 CFDEM 和 OpenFOAM 的 commit？
+
+编译前必须分别进入两个源码仓库，检查当前 `HEAD`：
+
+```bash
+# CFDEM（重命名前）
+cd $HOME/CFDEM/CFDEMcoupling-PUBLIC
+git log -1 --oneline
+git rev-parse HEAD
+
+# OpenFOAM
+cd $HOME/OpenFOAM/OpenFOAM-5.x
+git log -1 --oneline
+git rev-parse HEAD
+```
+
+如果 CFDEM 已按本文步骤重命名，应改为进入：
+
+```bash
+cd $HOME/CFDEM/CFDEMcoupling-PUBLIC-$WM_PROJECT_VERSION
+git log -1 --oneline
+git rev-parse HEAD
+```
+
+两个仓库应分别输出以下完整 commit：
+
+```text
+CFDEM:    1b78322bf4330bbf8b5277302907488187fd3263
+OpenFOAM: 538044ac05c4672b37c7df607dca1116fa88df88
+```
+
+如果不一致，应在相应仓库内执行：
+
+```bash
+# CFDEM
+git checkout 1b78322bf4330bbf8b5277302907488187fd3263
+
+# OpenFOAM
+git checkout 538044ac05c4672b37c7df607dca1116fa88df88
+```
+
+切换后再次执行 `git log -1 --oneline` 确认，并重新编译 OpenFOAM、LIGGGHTS 和 CFDEMcoupling。不要继续使用其他 commit 生成的旧编译产物，否则可能出现接口不兼容、编译失败或运行异常。
 
 祝大家顺利装好COOL三件套！

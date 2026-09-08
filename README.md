@@ -3,8 +3,12 @@ A resolved CFD-DEM coupling solver for two-phase fluid interaction with particle
 
 1. Before installing this solver, ensure that the CFDEM+LIGGGHTS+OpenFOAM are correctly installed.  
 **A Chinese tutorial to install the CFDEM+LIGGGHTS+OpenFOAM:**  
-[如何安装CFDEM+OpenFOAM+LIGGGHTS(COOL三件套)](https://mp.weixin.qq.com/s?__biz=MzI0NzU1NjcyMg==&mid=2247483674&idx=1&sn=ba114d4d4fc7204d755af07217297135&chksm=e9af7e07ded8f71169f83282fc3aa2f9252c6b65eba827ff93b86ef4c084802c97ac033b6629#rd)
+[如何安装 CFDEM+OpenFOAM+LIGGGHTS（COOL 三件套）](docs/base_cn.md)
 2. To install this solver, you just need to run the "remake" file after you successfully installed the previous codes.
+
+## WSL environment setup
+
+For step-by-step installation and compilation in WSL, see the [Chinese WSL setup guide](docs/wslSetup_cn.md).
 
 ## Introduction to tutorial cases
 1. single_sphere  
@@ -14,8 +18,9 @@ This case is an application of using the DEM clump. A clump consisting of overla
 
 ## Animations of some cases:  
 ### Sphere settling (corresponds to the tutorial case "single_sphere"):  
-<img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/settling.gif" width="40%">  
-Notice: this animation has a time period of 0.8 s. In the tutorial case "single_sphere", only 0.01 s is set (tutorial/single_sphere/CFD/system/controlDict line 26: endTime 0.01) just for the validation of successful installation. The user should change the endtime into 0.8 s to get the same result as the above animation.
+<img src="docs/settling.gif" width="40%">
+
+For the current simulation settings and run procedure, see the [single-sphere tutorial guide](docs/single_sphere_set.md).
 
 ### Fish settling (corresponds to the tutorial case "multi_sphere_fish"): 
 <img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/fish.gif" width="40%">  

@@ -7,6 +7,7 @@ EXE_INC = \
      $(PFLAGS) \
      $(PINC) \
      $(CFDEM_ADD_INCOMPTURBMOD_PATHS) \
+    -I./src \
     -I$(LIB_SRC)/transportModels \
     -I$(LIB_SRC)/transportModels/twoPhaseMixture/lnInclude \
     -I$(LIB_SRC)/transportModels/incompressible/lnInclude \

@@ -62,6 +62,7 @@ tutorial/single_sphere/CFD/0/alpha.water
 
 # Animation assets (hosted on GitHub Releases)
 animations/
+tutorial/single_sphere/ani/
 
 # CMake / alternative builds
 build/

@@ -114,11 +114,11 @@ doDivCor                1;
 `doDivCor 1` projects the particle-corrected velocity back to a divergence-free
 field by solving
 
-\[
+$$
 \nabla^2\phi_{IB}=\nabla\cdot\mathbf U,
 \qquad
 \mathbf U\leftarrow\mathbf U-\nabla\phi_{IB}.
-\]
+$$
 
 The solver also updates the face flux `phi` and pressure consistently. This is
 recommended near the air-water interface because it reduces continuity and

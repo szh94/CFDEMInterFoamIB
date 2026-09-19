@@ -7,8 +7,8 @@ variable            xmin           equal   0.0
 variable            xmax           equal   0.1
 variable            ymin           equal   0.0
 variable            ymax           equal   0.1
-variable            zmin           equal   0.2
-variable            zmax           equal   0.4
+variable            zmin           equal   0
+variable            zmax           equal   0.2
     
 variable            posx           equal   ${xmax}/2
 variable            posy           equal   ${ymax}/2
@@ -17,7 +17,7 @@ variable            vx             equal   0.0
 variable            vy             equal   0.0
 variable            vz             equal   0.0
     
-variable            rhop           equal   1400
+variable            rhop           equal   1250
 
 variable            timestep       equal   0.00001
 variable            outSteps       equal   1000
@@ -63,16 +63,16 @@ fix                 xwalls1 all wall/gran model hertz tangential history primiti
 fix                 xwalls2 all wall/gran model hertz tangential history primitive type 1 xplane 0.1
 fix                 ywalls1 all wall/gran model hertz tangential history primitive type 1 yplane 0.0
 fix                 ywalls2 all wall/gran model hertz tangential history primitive type 1 yplane 0.1
-fix                 zwalls1 all wall/gran model hertz tangential history primitive type 1 zplane 0.2
-# fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane ${zmax}
+fix                 zwalls1 all wall/gran model hertz tangential history primitive type 1 zplane 0
+# fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane 0.2
 
 # cfd coupling
 fix                 cfd  all couple/cfd couple_every 100 mpi
 fix                 cfd2 all couple/cfd/force
 
 #create single partciles
-create_atoms       1 single 0.05 0.05 0.33  units box
-set                atom 1 diameter 0.02 density 1500 vx 0 vy 0 vz 0
+create_atoms       1 single 0.05 0.05 0.12  units box
+set                atom 1 diameter 0.0167 density 1250 vx 0 vy 0 vz 0
 
 #apply nve integration to all particles that are inserted as single particles
 fix                 integr all nve/sphere

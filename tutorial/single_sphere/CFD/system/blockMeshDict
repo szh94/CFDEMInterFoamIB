@@ -25,8 +25,8 @@ yco1 0.0;
 yco2 0.1;
 
 // zco0 0.0;
-zco1 0.2;
-zco2 0.4;
+zco1 0;
+zco2 0.2;
 
 vertices
 (
@@ -42,7 +42,7 @@ vertices
 
 blocks
 (
-    hex ( 0  4  5  1  2  6  7  3 ) (45 45 90) simpleGrading (1 1 1)
+    hex ( 0  4  5  1  2  6  7  3 ) (50 50 100) simpleGrading (1 1 1)
 );
 
 edges

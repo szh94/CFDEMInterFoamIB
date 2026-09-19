@@ -67,7 +67,7 @@ fix                 xwalls2 all wall/gran model hertz tangential history primiti
 fix                 ywalls1 all wall/gran model hertz tangential history primitive type 1 yplane 0.0
 fix                 ywalls2 all wall/gran model hertz tangential history primitive type 1 yplane 0.1
 fix                 zwalls1 all wall/gran model hertz tangential history primitive type 1 zplane 0.2
-# fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane ${zmax}
+# fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane 0.4
 
 # cfd coupling
 fix                 cfd  all couple/cfd couple_every 100 mpi

@@ -67,6 +67,9 @@ tutorial/single_sphere/CFD/0/alpha.water
 animations/
 tutorial/single_sphere/ani/
 
+# Scratch notes kept out of the repo
+docs_tmp/
+
 # Python bytecode
 __pycache__/
 *.pyc

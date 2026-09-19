@@ -27,6 +27,15 @@ export const LEVEL_STYLE: Record<
   error: { dot: "bg-error", text: "text-error", bg: "bg-error/10", ring: "ring-error/30" },
 };
 
+/**
+ * Severity order, worst first -- the one ranking every sort in the panel uses.
+ *
+ * Typed as a `Record<Level, …>` on purpose: adding a member to `Level` then
+ * fails to compile here, rather than sorting the new level as `undefined` and
+ * quietly putting it wherever it happened to sit.
+ */
+export const LEVEL_RANK: Record<Level, number> = { error: 0, warn: 1, info: 2, ok: 3 };
+
 /** `CFD/system/blockMeshDict` -> `system/blockMeshDict` (drop the case root). */
 export function shortenFile(file: string): string {
   const parts = file.split("/");

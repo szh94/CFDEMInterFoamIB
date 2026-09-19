@@ -230,6 +230,15 @@ def resolve_param(param: Param, files: Dict[str, FileText]) -> Resolved:
         # and a pattern that matched twice all still mean the file is not what
         # the rule expects, which is a real thing to report.
         if param.optional:
+            # Some optional settings have a settled value in the absent state as
+            # well (``Param.default_when_absent``): the line says nothing, but
+            # the meaning is still "0", not "unknown".  Reporting the default
+            # here -- rather than only in the UI -- is what lets the derived
+            # metrics compute with it.  It is still not writable, so the value
+            # stays a reading of the case rather than a pending change.
+            if param.default_when_absent and param.default is not None:
+                return Resolved(param, param.default, "optional", [], None, 0,
+                                "Optional: this case leaves the line out; the default applies")
             return Resolved(param, None, "optional", [], None, 0,
                             "Optional: this case leaves the line out")
         return Resolved(param, None, "unresolved", [], None, 0, "No line matched")
@@ -332,10 +341,16 @@ def resolved_to_api(r: Resolved) -> dict:
         "default": p.default,
         "status": r.status,
         "readonly": p.readonly,
+        # Whether an absent line still has a value worth showing (see `Param`).
+        "default_when_absent": p.default_when_absent,
         # A ``product_of`` param is shown but never typed into, so it is not
         # editable no matter how healthy its match is.
         "editable": r.status == "ok" and not p.product_of,
         "product_of": list(p.product_of),
+        # Display-only grouping: the panel folds the named params into this row.
+        "partners": list(p.partners),
+        # Display-only layout: a triple that stays inside one column.
+        "compact": p.compact,
         "toggle": p.toggle,
         "enabled": r.enabled,
         "reason": r.reason,

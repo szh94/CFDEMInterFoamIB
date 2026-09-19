@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import { ApiError, api, setApiLang } from "./api";
 import { Translator, pickLang, type Lang } from "./i18n";
+import { LEVEL_RANK } from "./format";
 import type {
   ApplyResult,
   CaseEntry,
   CasePayload,
+  Consistency,
   Derived,
   Edit,
+  Metric,
   ParamValue,
   PreviewResult,
 } from "./types";
@@ -60,6 +63,110 @@ export function pickTheme(raw: string | null | undefined): Theme {
   return raw === "light" ? "light" : "default";
 }
 
+/** The two card lists in the derived panel that can be dragged into order.
+ * They are remembered separately: a metric is not a finding, and dropping one
+ * onto the other means nothing. */
+export type CardSection = "metrics" | "checks";
+
+/** Where the dragged card order is remembered between visits. */
+const CARD_ORDER_KEY = "dash.cardOrder";
+
+function emptyOrder(): Record<CardSection, string[]> {
+  return { metrics: [], checks: [] };
+}
+
+const initialCardOrder = readStoredOrder();
+
+/**
+ * One key holds both sections, so a value that is not shaped like a card order
+ * is replaced whole rather than patched: a half-readable value is worse than
+ * no memory at all, which is exactly the backend's own order.
+ */
+function readStoredOrder(): Record<CardSection, string[]> {
+  try {
+    const raw = window.localStorage.getItem(CARD_ORDER_KEY);
+    if (!raw) return emptyOrder();
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return emptyOrder();
+    const src = parsed as Record<string, unknown>;
+    return { metrics: idList(src.metrics), checks: idList(src.checks) };
+  } catch {
+    return emptyOrder();
+  }
+}
+
+function idList(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : [];
+}
+
+/**
+ * Persist the order.  This is called from a drop handler, so a `setItem` that
+ * throws (private mode) must not escape as an uncaught error on the way out of
+ * a React event.
+ */
+function setCardOrderEffects(order: Record<CardSection, string[]>): void {
+  try {
+    window.localStorage.setItem(CARD_ORDER_KEY, JSON.stringify(order));
+  } catch {
+    /* private mode: the arrangement just does not outlive the tab */
+  }
+}
+
+/**
+ * Reorder `items` to match a remembered `order`, without ever pruning the
+ * memory.
+ *
+ * A card can come and go as the inputs change -- `derived.py` appends several
+ * of them conditionally -- so `order` routinely names cards that are not here
+ * right now, and `items` routinely holds cards `order` has never heard of.
+ * Both are legal, and both are handled without touching `order`:
+ *
+ * * An id in `order` sorts by its position there.
+ * * An id that is not follows whichever id *before it in `items`* is in
+ *   `order`; with no such predecessor it goes to the front.  Following the
+ *   backend neighbour rather than falling to the end is what makes a card that
+ *   disappeared and came back land near where it was.
+ * * Nothing is ever dropped from `order`: an id missing today may be back
+ *   tomorrow, and forgetting it would silently reset that part of the
+ *   arrangement.  Do not "tidy up" the stale ids.
+ *
+ * An empty `order` means "never arranged", i.e. the backend's own order, and
+ * is returned untouched.
+ */
+export function applyCardOrder<T>(
+  items: T[],
+  order: string[],
+  id: (x: T) => string,
+): T[] {
+  if (!order.length) return items;
+  const place = new Map(order.map((x, i) => [x, i]));
+  let last = -1;
+  const keyed = items.map((item) => {
+    const at = place.get(id(item));
+    if (at !== undefined) last = at;
+    return { item, key: last };
+  });
+  // Stable (ES2019), so equal keys -- every card the user has never moved --
+  // keep the backend's relative order.
+  keyed.sort((a, b) => a.key - b.key);
+  return keyed.map((k) => k.item);
+}
+
+/** The metric list as the panel shows it.  The All / Issues filter is applied
+ * by the caller *after* this, so order and filtering never fight. */
+export function orderedMetrics(derived: Derived | null, order: string[]): Metric[] {
+  return applyCardOrder(derived?.metrics ?? [], order, (m) => m.id);
+}
+
+/** The finding list as the panel shows it: the remembered arrangement, then
+ * severity.  Severity has the last word, so a stored order can never lift a
+ * warning above an error -- the sort is stable, so the manual arrangement
+ * survives inside a level. */
+export function orderedChecks(derived: Derived | null, order: string[]): Consistency[] {
+  const arranged = applyCardOrder(derived?.consistency ?? [], order, (c) => c.id);
+  return [...arranged].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+}
+
 /** A case file held open in the panel's editor.
  *
  * `saved` is what came off disk, so `text !== saved` is exactly "there is
@@ -104,6 +211,11 @@ interface State {
   /** Pending on/off state for toggle params, keyed by id. */
   toggles: Record<string, boolean>;
   derived: Derived | null;
+  /** Cards of the derived panel whose content the last *live* recompute
+      changed, each under a counter that advances every time it changes: a card
+      replays its highlight by keying an overlay on its own number.  Empty until
+      the first edit -- see `changedCards`. */
+  flashes: Record<string, number>;
   preview: PreviewResult | null;
   lastApply: ApplyResult | null;
 
@@ -118,6 +230,9 @@ interface State {
   /** Revert overwrites files without a diff, so it asks first. */
   revertConfirm: boolean;
   toasts: Toast[];
+  /** Card ids the user has dragged into place, per section; see
+   * `applyCardOrder` for how the rest of each list is placed around them. */
+  cardOrder: Record<CardSection, string[]>;
   /** Set by the derived panel so a click can scroll to & flash a field. */
   focusParam: string | null;
   /** Bumped on every focus request, so a re-click still counts as one. */
@@ -148,6 +263,10 @@ interface State {
   revert: () => Promise<void>;
   toast: (kind: ToastKind, text: string, detail?: string) => void;
   dismissToast: (id: number) => void;
+  /** Move a card next to another within its own section.  A move that the
+   * display rules would immediately undo is dropped rather than stored. */
+  moveCard: (section: CardSection, id: string, target: string, above: boolean) => void;
+  resetCardOrder: (section: CardSection) => void;
   setFocusParam: (id: string | null) => void;
 }
 
@@ -219,16 +338,61 @@ export function changedEdits(  payload: CasePayload | null,
 function deriveSoon() {
   if (deriveTimer !== undefined) window.clearTimeout(deriveTimer);
   deriveTimer = window.setTimeout(async () => {
-    const { casePath, payload, edits, toggles } = useStore.getState();
+    const { casePath, payload, edits, toggles, derived: before } = useStore.getState();
     if (!casePath) return;
     try {
-      useStore.setState({
-        derived: await api.derive(casePath, changedEdits(payload, edits, toggles)),
-      });
+      const next = await api.derive(casePath, changedEdits(payload, edits, toggles));
+      const flashes = { ...useStore.getState().flashes };
+      for (const key of changedCards(before, next)) flashes[key] = (flashes[key] ?? 0) + 1;
+      useStore.setState({ derived: next, flashes });
     } catch {
       /* a stale derive is not worth interrupting the user for */
     }
   }, 150);
+}
+
+/**
+ * The key a derived-panel card is filed under.  Metrics and findings share one
+ * map but not one namespace, and their ids are not apart already -- the
+ * submerged-particle metric and finding are both `dem.submerged`.
+ */
+export function flashKey(kind: "metric" | "check", id: string): string {
+  return `${kind}:${id}`;
+}
+
+/** Everything one card shows, so that any change to any of it reads as "this
+    card updated" -- including one that only alters the wording.  A metric's
+    value is the pair `display`/`detail`; a finding's is its `level`/`title`. */
+function cardSignature(c: Metric | Consistency): string {
+  const shown = "display" in c ? [c.display, c.detail] : [c.level, c.title];
+  const refs = "sources" in c ? c.sources : c.source_refs;
+  return JSON.stringify([...shown, c.message, refs.map((r) => String(r.value))]);
+}
+
+/**
+ * Which derived-panel cards a fresh result actually changed, so that those --
+ * and only those -- can light up.  A card that has just appeared counts: a
+ * finding surfacing is the one arrival worth looking up for.
+ *
+ * Only the live path calls this.  Opening a case, switching language, rolling
+ * back or previewing all replace the panel wholesale, and lighting up every
+ * card would say nothing about what the edit did.
+ */
+function changedCards(before: Derived | null, after: Derived): string[] {
+  if (!before) return [];
+  const prev = new Map<string, string>();
+  for (const m of before.metrics) prev.set(flashKey("metric", m.id), cardSignature(m));
+  for (const c of before.consistency) prev.set(flashKey("check", c.id), cardSignature(c));
+  const out: string[] = [];
+  for (const m of after.metrics) {
+    const key = flashKey("metric", m.id);
+    if (prev.get(key) !== cardSignature(m)) out.push(key);
+  }
+  for (const c of after.consistency) {
+    const key = flashKey("check", c.id);
+    if (prev.get(key) !== cardSignature(c)) out.push(key);
+  }
+  return out;
 }
 
 export const useStore = create<State>()((set, get) => ({
@@ -239,6 +403,7 @@ export const useStore = create<State>()((set, get) => ({
   edits: {},
   toggles: {},
   derived: null,
+  flashes: {},
   preview: null,
   lastApply: null,
   lang: initialLang,
@@ -249,6 +414,7 @@ export const useStore = create<State>()((set, get) => ({
   editor: null,
   revertConfirm: false,
   toasts: [],
+  cardOrder: initialCardOrder,
   focusParam: null,
   focusSeq: 0,
 
@@ -539,6 +705,46 @@ export const useStore = create<State>()((set, get) => ({
 
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  moveCard: (section, id, target, above) => {
+    if (id === target) return;
+    const { derived, cardOrder } = get();
+
+    // The list the user is looking at: unfiltered, and in display order.  The
+    // stored order is meant to be exactly this, so a legal drag round-trips
+    // through the severity sort unchanged on the next read.
+    const display = (order: string[]): string[] =>
+      section === "metrics"
+        ? orderedMetrics(derived, order).map((m) => m.id)
+        : orderedChecks(derived, order).map((c) => c.id);
+
+    const items = display(cardOrder[section]);
+    // One guard covers both ways a target can be wrong: the card the drag
+    // started on has been re-derived away in the meantime, or the id and the
+    // target are not even in the same section.
+    if (!items.includes(id) || !items.includes(target)) return;
+
+    const next = items.filter((x) => x !== id);
+    next.splice(next.indexOf(target) + (above ? 0 : 1), 0, id);
+
+    // A drag across a severity boundary sorts straight back, so nothing the
+    // user can see has changed.  That is not an arrangement; remembering it
+    // would pin a warning under a rule it never appeared to obey, and spring
+    // it the next time a finding in between changes level.
+    if (display(next).every((x, i) => x === items[i])) return;
+
+    const order = { ...cardOrder, [section]: next };
+    set({ cardOrder: order });
+    setCardOrderEffects(order);
+  },
+
+  resetCardOrder: (section) => {
+    const order = { ...get().cardOrder, [section]: [] };
+    set({ cardOrder: order });
+    // Not `removeItem`: the one key holds both sections, so dropping it would
+    // take the other section's arrangement down with it.
+    setCardOrderEffects(order);
+  },
 
   setFocusParam: (id) =>
     set((s) => ({ focusParam: id, focusSeq: s.focusSeq + 1 })),

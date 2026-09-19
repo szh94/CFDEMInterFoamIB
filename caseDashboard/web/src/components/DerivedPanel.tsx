@@ -1,19 +1,25 @@
 import { useState, type ReactNode } from "react";
 import { useStore } from "../store";
-import { useT } from "../hooks";
+import { useCardDrag, useOrderedMetrics, useT } from "../hooks";
+import { CardSlot } from "./CardSlot";
 import { ConsistencyList } from "./ConsistencyList";
 import { MetricCard } from "./MetricCard";
-import { IconCheck, IconChevron, IconGrid } from "./Icons";
+import { IconCheck, IconChevron, IconGrid, IconUndo } from "./Icons";
 import type { Level, Metric } from "../types";
 
 type Filter = "all" | "issue";
 
 export function DerivedPanel() {
   const derived = useStore((s) => s.derived);
+  const metricsOrder = useStore((s) => s.cardOrder.metrics);
+  const checksOrder = useStore((s) => s.cardOrder.checks);
+  const resetCardOrder = useStore((s) => s.resetCardOrder);
   const [filter, setFilter] = useState<Filter>("all");
+  // Before the list is filtered, and before anything can return early.
+  const drag = useCardDrag("metrics");
+  const metrics = useOrderedMetrics();
   const t = useT();
 
-  const metrics = derived?.metrics ?? [];
   const summary = derived?.summary;
 
   const shown = metrics.filter((m: Metric) => {
@@ -49,18 +55,28 @@ export function DerivedPanel() {
         <Section
           title={t.t("Metrics")}
           right={
-            <div className="flex gap-0.5 rounded border border-line p-0.5">
-              {(["all", "issue"] as Filter[]).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`rounded px-1.5 py-0.5 text-[10px] transition ${
-                    filter === f ? "bg-accent/20 text-accent" : "text-ink-3 hover:text-ink"
-                  }`}
-                >
-                  {t.t(f === "all" ? "All" : "Issues only")}
-                </button>
-              ))}
+            <div className="flex items-center gap-1">
+              {/* Alongside the filter, not instead of it. */}
+              {metricsOrder.length > 0 && (
+                <ResetOrder
+                  title={t.t("Reset order")}
+                  label={t.t("Reset the card order to the default")}
+                  onClick={() => resetCardOrder("metrics")}
+                />
+              )}
+              <div className="flex gap-0.5 rounded border border-line p-0.5">
+                {(["all", "issue"] as Filter[]).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`rounded px-1.5 py-0.5 text-[10px] transition ${
+                      filter === f ? "bg-accent/20 text-accent" : "text-ink-3 hover:text-ink"
+                    }`}
+                  >
+                    {t.t(f === "all" ? "All" : "Issues only")}
+                  </button>
+                ))}
+              </div>
             </div>
           }
         >
@@ -69,7 +85,9 @@ export function DerivedPanel() {
           ) : (
             <div className="space-y-1.5">
               {shown.map((m) => (
-                <MetricCard key={m.id} metric={m} />
+                <CardSlot key={m.id} id={m.id} drag={drag} section="metrics">
+                  <MetricCard metric={m} drag={drag} />
+                </CardSlot>
               ))}
             </div>
           )}
@@ -78,7 +96,18 @@ export function DerivedPanel() {
         <div className="my-3 h-px bg-line-soft" />
 
         {/* ---- consistency ---- */}
-        <Section title={t.t("Consistency")}>
+        <Section
+          title={t.t("Consistency")}
+          right={
+            checksOrder.length > 0 ? (
+              <ResetOrder
+                title={t.t("Reset order")}
+                label={t.t("Reset the card order to the default")}
+                onClick={() => resetCardOrder("checks")}
+              />
+            ) : undefined
+          }
+        >
           <ConsistencyList />
         </Section>
 
@@ -91,6 +120,30 @@ export function DerivedPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+/** The way back to the backend's own order.  Shown only once a section has
+ * actually been rearranged; icon-only and unlabelled, like the rest of the
+ * chrome, because this row already carries the All / Issues toggle. */
+function ResetOrder({
+  title,
+  label,
+  onClick,
+}: {
+  title: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={label}
+      className="rounded p-0.5 text-ink-4 transition hover:text-ink"
+    >
+      <IconUndo width={12} height={12} />
+    </button>
   );
 }
 

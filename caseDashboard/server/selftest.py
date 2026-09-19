@@ -35,6 +35,12 @@ CASE = REPO_DIR / "tutorial" / "single_sphere"
 FISH = REPO_DIR / "tutorial" / "multi_sphere_fish"
 DEM = "DEM/in.liggghts_run"
 CP = "CFD/constant/couplingProperties"
+SF = "CFD/system/setFieldsDict"
+
+#: The water box's lower corner.  It has no key of its own -- it is the three
+#: literals in ``box (x y z) ($xmax $ymax $zmax)`` -- so it is the one part of
+#: the file the key-anchored rules cannot reach, and the one worth watching.
+BOX_LOWER = ("mesh.sf.xmin", "mesh.sf.ymin", "mesh.sf.zmin")
 
 #: The settings the solver defaults, so a case may leave them out (see
 #: ``Param.optional``).  Named here because two checks below are about them and
@@ -115,6 +121,49 @@ def _() -> None:
     eq(dupes, set(), "duplicate ids")
 
 
+@check("a grouped parameter names real partners of its own file")
+def _() -> None:
+    # `partners` is display-only: the panel folds the named params into this
+    # one's row and skips them on their own.  Nothing about writing breaks if a
+    # name is wrong, which is exactly the risk -- a typo silently stops the
+    # grouping and just leaves extra rows on screen.  So the structure is
+    # checked here: every name resolves, owner and partners live in the same
+    # card (a row cannot span two), the parts agree on being switchable -- a
+    # toggle row carries one Off/On control per box, so a mixed row would show a
+    # control for one box and nothing for the other -- no partner declares a
+    # group of its own (a chain would have the middle param claimed twice and
+    # rendered nowhere) and no param is claimed by two rows, which would show one
+    # box twice and hide the other owner's row behind it.
+    by_id = {p.id: p for p in ALL_PARAMS}
+    owners: Dict[str, str] = {}
+    for p in ALL_PARAMS:
+        if not p.partners:
+            continue
+        eq(p.is_triple, False, f"{p.id}: a triple is already three boxes")
+        for name in p.partners:
+            q = by_id.get(name)
+            truthy(q is not None, f"{p.id}: partner {name!r} is not a parameter")
+            eq(q.group, p.group, f"{p.id}: partner {q.id} is in another group")
+            eq(q.file, p.file, f"{p.id}: partner {q.id} is in another file")
+            eq(q.toggle, p.toggle, f"{p.id}: partner {q.id} does not agree on being switchable")
+            truthy(not q.partners, f"{p.id}: partner {q.id} is itself grouped")
+            truthy(
+                name not in owners,
+                f"{name} is claimed by both {owners.get(name)} and {p.id}",
+            )
+            owners[name] = p.id
+
+
+@check("a compact row is a triple")
+def _() -> None:
+    # `compact` says "fit these three boxes in one column", so it means nothing
+    # on a param that has no three boxes -- but costs nothing at write time
+    # either, which is exactly why a stray one would go unnoticed.
+    for p in ALL_PARAMS:
+        if p.compact:
+            truthy(p.is_triple, f"{p.id}: compact, but it is not a triple")
+
+
 # ---------------------------------------------------------------------------
 # resolution
 # ---------------------------------------------------------------------------
@@ -182,6 +231,85 @@ def _() -> None:
         plan = writer.plan_edits(resolved, files, [writer.Edit("coupling.Exdrag", 1.0)])
         truthy("coupling.Exdrag" in plan.errors,
                "a line the case does not have was accepted for writing")
+
+
+@check("the water box's lower corner is found where it is written as literals")
+def _() -> None:
+    # `box (x y z) ($xmax $ymax $zmax)` names the *upper* corner through macros
+    # the three `*max` rules own; the lower one is three bare numbers with no key
+    # of their own, so these rules anchor on the `box (` head instead.  What that
+    # must not cost is precision: each rule has to span its own number and no
+    # other, so that editing one component leaves the other two alone.
+    resolved, files = read()
+    line = resolved["mesh.sf.xmin"].line
+    eq([resolved[pid].status for pid in BOX_LOWER], ["ok"] * 3, "status")
+    eq([resolved[pid].line for pid in BOX_LOWER], [line] * 3, "line")
+    spans = [resolved[pid].spans[0] for pid in BOX_LOWER]
+    eq(len({(s.col_start, s.col_end) for s in spans}), 3, "distinct spans")
+    outer = files[SF].contents[line - 1]
+    eq([outer[s.col_start:s.col_end] for s in spans], ["0.0"] * 3,
+       "the text each rule would replace")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        target = copy_case(Path(tmp))
+        plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.sf.ymin", 0.03)])
+        eq(plan.errors, {}, "plan errors")
+        writer.apply_plan(target, files, plan)
+        after = (target / SF).read_bytes().decode("utf-8")
+        eq(after, files[SF].text.replace(outer, outer.replace("0.0 0.0 0.0", "0.0 0.03 0.0", 1)),
+           "one component moved and the other two, plus the macro corner, did not")
+
+
+@check("an optional setting with a definite absent value reads as that value")
+def _() -> None:
+    # The mirror of the check above.  Some absent optional settings are not
+    # "unknown" but "the default" -- a water box with no lower corner written
+    # down starts at the origin -- so the panel has a number to show and the
+    # metrics have one to compute with.  It stays unwritable either way: the
+    # absence is what the file says, and there is no line to replace.
+    with tempfile.TemporaryDirectory() as tmp:
+        target = copy_case(Path(tmp))
+        path = target / SF
+        kept = "".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines(keepends=True)
+            if not line.lstrip().startswith("box (")
+        )
+        path.write_bytes(kept.encode("utf-8"))
+
+        resolved, files = reader.read_case(target)
+        for pid in BOX_LOWER:
+            r = resolved[pid]
+            truthy(r.param.default_when_absent, f"{pid} does not declare an absent value")
+            eq(r.status, "optional", f"{pid} status")
+            eq(r.value, 0.0, f"{pid} value")
+            eq(reader.resolved_to_api(r)["editable"], False, f"{pid} editable")
+        eq([u["id"] for u in app.recognition(resolved, files)["unrecognized"]], [],
+           "an absent optional parameter was reported as unrecognized")
+
+        depth = [
+            m for m in derived.compute_metrics(derived.Ctx(resolved))
+            if m["id"] == "mesh.water_depth"
+        ]
+        eq(len(depth), 1, "the water-depth metric was dropped along with the line")
+        eq(depth[0]["value"], resolved["mesh.sf.zmax"].value, "depth = zmax - <absent zmin=0>")
+
+
+@check("a water box reaching outside the domain is not an error")
+def _() -> None:
+    # Deliberately unchecked.  `zmax` above `zco2` is how a case starts full of
+    # water and `zmin` below `zco1` is the mirror of that, so a bound outside the
+    # mesh is a choice, not a mistake.  Only the x/y coverage checks remain, and
+    # those are about a *short* box leaving a dry corner.  Pinning the exact list
+    # is the point: a re-added bounds check changes it.
+    resolved, _files = read()
+    ctx = derived.Ctx(resolved, [
+        {"id": "mesh.sf.zmax", "value": 2.0},
+        {"id": "mesh.sf.zmin", "value": -1.0},
+    ])
+    ids = [c["id"] for c in derived.compute_consistency(ctx)
+           if c["id"].startswith("setfields.")]
+    eq(ids, ["setfields.cover.x", "setfields.cover.y"], "setfields checks")
 
 
 @check("the scoped alphaMin lands inside IBProps")
@@ -263,9 +391,9 @@ def _() -> None:
     # back at itself would never notice.
     resolved, files = read()
     for pid, want in (
-        ("phys.water.nu", 1e-06),
-        ("phys.water.rho", 1000.0),
-        ("phys.air.nu", 1.78e-05),
+        ("phys.water.nu", 1.004e-06),
+        ("phys.water.rho", 998.2),
+        ("phys.air.nu", 1.48e-05),
         ("phys.air.rho", 1.2),
     ):
         r = resolved[pid]
@@ -287,7 +415,7 @@ def _() -> None:
     # no scope, and exactly one line in the file carries the keyword.
     sigma = resolved["phys.sigma"]
     eq(sigma.status, "ok", "phys.sigma status")
-    eq(sigma.value, 0.07, "phys.sigma value")
+    eq(sigma.value, 0.07275, "phys.sigma value")
     eq(sigma.matches, 1, "phys.sigma match count")
     g = resolved["phys.g"]
     eq(g.value, [0.0, 0.0, -9.81], "phys.g value")
@@ -307,7 +435,11 @@ def _() -> None:
     eq(len(after), len(before), "the line count changed")
     changed = [i for i, (b, a) in enumerate(zip(before, after)) if b != a]
     eq(len(changed), 1, f"the number of changed lines is not 1: {[after[i] for i in changed]}")
-    eq(after[changed[0]], before[changed[0]].replace("0.07", "0.05"),
+    # Built by swapping the number out of the line as it is on disk, so what is
+    # compared is *what else* survived -- the repeated keyword and the bracketed
+    # dimension set -- and the expectation does not have to be retyped whenever
+    # the case's own sigma changes.
+    eq(after[changed[0]], re.sub(r"[0-9.eE+\-]+(?=;)", "0.05", before[changed[0]]),
        "something other than the value moved")
 
     # The water/air pair again, this time through the writer: asking for the

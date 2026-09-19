@@ -67,6 +67,10 @@ tutorial/single_sphere/CFD/0/alpha.water
 animations/
 tutorial/single_sphere/ani/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # CMake / alternative builds
 build/
 cmake-build-*/
@@ -76,4 +80,3 @@ cmake-build-*/
 caseDashboard/.cache/
 caseDashboard/web/node_modules/
 caseDashboard/web/dist/
-caseDashboard/**/__pycache__/

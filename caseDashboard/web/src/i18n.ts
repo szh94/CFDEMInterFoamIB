@@ -101,6 +101,9 @@ const ZH_UI: Record<string, string> = {
   "No metrics": "暂无指标",
   "Consistency": "一致性",
   "All cross-file consistency checks pass": "跨文件一致性检查全部通过",
+  "Drag to reorder": "拖动可调整顺序",
+  "Reset order": "恢复默认顺序",
+  "Reset the card order to the default": "把卡片顺序恢复为默认顺序",
   "Inactive under the current configuration ({n})": "当前配置下不生效 ({n})",
   "Jump to {label} · {file}:{line}": "跳到 {label} · {file}:{line}",
 
@@ -133,17 +136,19 @@ const ZH_UI: Record<string, string> = {
   "{n} items": "{n} 项",
 
   // -- parameter field --
-  "On": "增加",
-  "Off": "取消",
-  "Enabled: switching it off comments the line out": "已启用：取消会把这一行注释掉",
+  "On": "开",
+  "Off": "关",
+  "Enabled: switching it off comments the line out": "已启用：关会把这一行注释掉",
   "Off: the line is commented out; switching it on uncomments it and writes the value back":
-    "已取消：这一行被注释掉了，增加可解除注释并写回数值",
+    "已关：这一行被注释掉了，开可解除注释并写回数值",
   "Suggested range [{lo}, {hi}]": "建议范围 [{lo}, {hi}]",
   "Differs from the same quantity in another file": "与其它文件中的同名取值不一致",
   "Unused: this case takes the other particle-creation route":
     "未使用：本算例走的是另一条颗粒创建路线",
   "Optional: this case leaves the line out and the solver's own default applies":
     "可选：本算例没有写这一行，求解器会用自己的默认值",
+  "Optional: this case leaves the line out, so the value shown is the default":
+    "可选：本算例没有写这一行，此处显示的是默认值",
   "Not found: matched {n} times (exactly 1 required)": "无法定位：匹配 {n} 次（需恰好 1 次）",
   "On disk: {value} · click to undo this change": "原值 {value} · 点击撤销这项改动",
   "Derived": "自动",
@@ -221,22 +226,25 @@ const ZH_UI: Record<string, string> = {
 
 /** Parameter names, keyed by parameter id. */
 const ZH_PARAM: Record<string, string> = {
-  "mesh.xco1": "域 x 最小值",
-  "mesh.yco1": "域 y 最小值",
-  "mesh.zco1": "域 z 最小值",
+  "mesh.xco1": "域 x 最小/最大值",
+  "mesh.yco1": "域 y 最小/最大值",
+  "mesh.zco1": "域 z 最小/最大值",
   "mesh.xco2": "域 x 最大值",
   "mesh.yco2": "域 y 最大值",
   "mesh.zco2": "域 z 最大值",
   "mesh.cells": "单元数",
+  "mesh.sf.xmin": "初始水盒 x 下/上界",
+  "mesh.sf.ymin": "初始水盒 y 下/上界",
+  "mesh.sf.zmin": "初始水盒 z 下/上界",
   "mesh.sf.xmax": "初始水盒 x 上界",
   "mesh.sf.ymax": "初始水盒 y 上界",
-  "mesh.sf.zmax": "初始水面高度",
-  "mesh.prox": "x 方向分解",
+  "mesh.sf.zmax": "初始水盒 z 上界",
+  "mesh.prox": "x|y|z 方向分解",
   "mesh.proy": "y 方向分解",
   "mesh.proz": "z 方向分解",
   "mesh.numberOfSubdomains": "子域总数",
   "mesh.method": "分解方法",
-  "run.startTime": "起始时间",
+  "run.startTime": "起始/结束时间",
   "run.endTime": "结束时间",
   "run.deltaT": "CFD 时间步",
   "run.writeControl": "写输出控制",
@@ -276,23 +284,23 @@ const ZH_PARAM: Record<string, string> = {
   "coupling.doDivCor": "散度修正",
   "coupling.Exdrag": "显式阻力开关",
   "coupling.dragcorrcoe": "阻力修正系数",
-  "dem.xmin": "DEM 区域 x 最小值",
-  "dem.xmax": "DEM 区域 x 最大值",
-  "dem.ymin": "DEM 区域 y 最小值",
-  "dem.ymax": "DEM 区域 y 最大值",
-  "dem.zmin": "DEM 区域 z 最小值",
-  "dem.zmax": "DEM 区域 z 最大值",
+  "dem.xmin": "区域 x 最小/最大值",
+  "dem.xmax": "区域 x 最大值",
+  "dem.ymin": "区域 y 最小/最大值",
+  "dem.ymax": "区域 y 最大值",
+  "dem.zmin": "区域 z 最小/最大值",
+  "dem.zmax": "区域 z 最大值",
   "dem.rhop": "rhop 变量",
   "dem.timestep": "DEM 时间步",
   "dem.outSteps": "DEM dump 间隔 (步)",
   "dem.thermo": "DEM 屏幕打印间隔 (步)",
-  "dem.processors": "DEM 进程分解",
+  "dem.processors": "进程分解",
   "dem.couple_every": "couple_every (DEM 步)",
-  "dem.integr": "颗粒积分方式",
-  "dem.pos": "颗粒初始位置",
-  "dem.diameter": "颗粒直径",
-  "dem.density": "颗粒密度",
-  "dem.velocity": "颗粒初速度",
+  "dem.integr": "积分方式",
+  "dem.pos": "初始位置",
+  "dem.diameter": "直径",
+  "dem.density": "密度",
+  "dem.velocity": "初速度",
   "dem.ms.seed": "模板随机种子",
   "dem.ms.atom_type": "atom 类型",
   "dem.ms.density": "密度来源",
@@ -319,12 +327,66 @@ const ZH_PARAM: Record<string, string> = {
   "dem.ms.region": "插入目标区域名",
   "dem.ms.particles_in_region": "区域内颗粒数",
   "dem.ms.ntry_mc": "蒙特卡洛尝试次数",
-  "dem.wall.x1": "壁面 x 下界",
-  "dem.wall.x2": "壁面 x 上界",
-  "dem.wall.y1": "壁面 y 下界",
-  "dem.wall.y2": "壁面 y 上界",
-  "dem.wall.z1": "壁面 z 下界",
-  "dem.wall.z2": "壁面 z 上界",
+  "dem.wall.x1": "x 下/上界",
+  "dem.wall.x2": "x 上界",
+  "dem.wall.y1": "y 下/上界",
+  "dem.wall.y2": "y 上界",
+  "dem.wall.z1": "z 下/上界",
+  "dem.wall.z2": "z 上界",
+};
+
+/**
+ * Derived-metric names, keyed by metric id.  A metric is identified by its id
+ * rather than by its label because it can be reworded -- and because one id
+ * (`mesh.size`) only ever appears when the metric fails, so its wording is not
+ * even the same string as the metric it stands in for.
+ */
+const ZH_METRIC: Record<string, string> = {
+  "mesh.size": "域尺寸",
+  "mesh.domain": "域尺寸 (x×y×z)",
+  "mesh.delta": "单元尺寸",
+  "mesh.uniformity": "单元各向同性",
+  "mesh.ncells": "单元总数",
+  "mesh.cells_per_diameter": "每颗粒直径的单元数",
+  "mesh.span": "直径跨越的整数单元数",
+  "coupling.period": "耦合周期",
+  "coupling.steps_per_period": "每耦合周期的 CFD 步数",
+  "coupling.dem_steps_per_period": "每耦合周期的 DEM 步数",
+  "run.cfd_steps": "CFD 总步数",
+  "run.frames": "输出帧总数",
+  "mesh.water_depth": "初始水深",
+  "dem.submerged": "初始状态",
+  "parallel.subdomains": "并行进程数",
+};
+
+/**
+ * Consistency-finding titles, keyed by `id:level`.  Unlike a metric, one
+ * finding id carries two verdicts and words them differently -- "Domain agrees
+ * in x" against "Domain mismatch in x" -- so the level is part of the key; the
+ * axis, which is part of the id, is spelled out in the Chinese instead of
+ * being substituted.  A pair that is not in the table (a rule that changed
+ * level, say) falls back to the English title the backend sent.
+ */
+const ZH_CHECK: Record<string, string> = {
+  "domain.x:ok": "域在 x 方向一致",
+  "domain.x:warn": "域在 x 方向不一致",
+  "domain.y:ok": "域在 y 方向一致",
+  "domain.y:warn": "域在 y 方向不一致",
+  "domain.z:ok": "域在 z 方向一致",
+  "domain.z:warn": "域在 z 方向不一致",
+  "setfields.cover.x:ok": "初始水盒覆盖 x 方向",
+  "setfields.cover.x:warn": "初始水盒未覆盖完整 x 范围",
+  "setfields.cover.y:ok": "初始水盒覆盖 y 方向",
+  "setfields.cover.y:warn": "初始水盒未覆盖完整 y 范围",
+  "coupling.divisible:ok": "耦合周期能被 CFD 时间步整除",
+  "coupling.divisible:error": "耦合周期不能被 CFD 时间步整除",
+  "dem.inside:ok": "颗粒初始位于 DEM 区域内",
+  "dem.inside:warn": "颗粒初始位于 DEM 区域外",
+  "dem.wall_clearance:ok": "颗粒未穿透壁面",
+  "dem.wall_clearance:warn": "颗粒穿透壁面",
+  "dem.submerged:ok": "颗粒与初始水面",
+  "dem.submerged:info": "颗粒与初始水面",
+  "run.adaptivestep:info": "自适应时间步已关闭",
 };
 
 /** Group (tab) names, keyed by group id. */
@@ -352,19 +414,21 @@ const ZH_FILE: Record<string, string> = {
 const ZH_CARD: Record<string, string> = {
   "Physical properties": "物理参数",
   "Variables": "变量",
-  "Wall settings": "壁面 wall 设置",
+  "Wall settings": "壁面内置平面 wall 设置",
   "Particle type and creation": "颗粒类型与创建设置",
   "Output control": "输出控制",
 };
 
 /** Which table a name belongs to; see `Translator.byId`. */
-export type NameKind = "param" | "group" | "file" | "card";
+export type NameKind = "param" | "group" | "file" | "card" | "metric" | "check";
 
 const TABLES: Record<NameKind, Record<string, string>> = {
   param: ZH_PARAM,
   group: ZH_GROUP,
   file: ZH_FILE,
   card: ZH_CARD,
+  metric: ZH_METRIC,
+  check: ZH_CHECK,
 };
 
 /** Substitute `{name}` placeholders, leaving unknown ones alone. */

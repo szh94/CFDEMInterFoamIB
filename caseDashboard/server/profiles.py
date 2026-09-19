@@ -62,9 +62,13 @@ def _triple(pid: str, group: str, file: str, head: str, tail: str, sep, **kw) ->
 # --------------------------------------------------------------------------
 
 #: The blockMeshDict half of the fluid side: the six extents and the cell
-#: counts.  Declaration order doubles as display order, and the panel grid is
-#: row-major (``grid-cols-3``), so the six extents are grouped as all-minimums
-#: then all-maximums: each column then reads one axis top-to-bottom.
+#: counts.  Declaration order doubles as display order, and an extent's two ends
+#: are shown on one row: each ``co1`` names its ``co2`` through ``partners``, so
+#: the panel puts the min and max boxes side by side and the grid reads one axis
+#: per row.  The grouping only works while the named partners follow their owner
+#: in this list -- it is declared on the first of the group and the panel folds
+#: in whichever params the names point at -- so keep ``co2`` right after its
+#: ``co1``.
 #:
 #: The initial field and the decomposition live in ``FIELD_PARAMS`` below rather
 #: than here for one reason: a card follows the order of the parameters in its
@@ -73,16 +77,19 @@ def _triple(pid: str, group: str, file: str, head: str, tail: str, sep, **kw) ->
 MESH_PARAMS: List[Param] = [
     _scalar(
         "mesh.xco1", "fluid", "CFD/system/blockMeshDict", "xco1",
-        vtype="float", unit="m", label="Domain x min", default=0.0,
+        vtype="float", unit="m", label="Domain x min/max", default=0.0,
+        partners=("mesh.xco2",),
         help="blockMeshDict vertex macro; must equal the DEM region's xmin.",
     ),
     _scalar(
         "mesh.yco1", "fluid", "CFD/system/blockMeshDict", "yco1",
-        vtype="float", unit="m", label="Domain y min", default=0.0,
+        vtype="float", unit="m", label="Domain y min/max", default=0.0,
+        partners=("mesh.yco2",),
     ),
     _scalar(
         "mesh.zco1", "fluid", "CFD/system/blockMeshDict", "zco1",
-        vtype="float", unit="m", label="Domain z min", default=0.2,
+        vtype="float", unit="m", label="Domain z min/max", default=0.2,
+        partners=("mesh.zco2",),
         help="The demo case's domain does not start at 0; setFields/DEM coordinates are absolute.",
     ),
     _scalar(
@@ -105,6 +112,7 @@ MESH_PARAMS: List[Param] = [
             rf"(?P<valz>\d+)(?P<post>\s*\)\s*.*)$"
         ),
         vtype="int3", label="Cell counts", default=[45, 45, 90],
+        compact=True,
         help="Changing this also changes the cell size, cells/diameter and the total cell count.",
     ),
 ]
@@ -215,6 +223,7 @@ PHYS_PARAMS: List[Param] = [
         head=r"\s*value\s+\(\s*", tail=r"\s*\)\s*;.*", sep=(r"\s+", r"\s+"),
         card=_CARD_PHYS,
         vtype="float3", unit="m/s2", label="Gravity", default=[0.0, 0.0, -9.81],
+        compact=True,
         help="Read every time step; the z component is negative, which is what "
              "makes the water settle and the particle fall through it.",
     ),
@@ -224,27 +233,88 @@ PHYS_PARAMS: List[Param] = [
 # 3. initial field and parallel decomposition
 # --------------------------------------------------------------------------
 
+def _box_corner(pid: str, axis: int, label: str, **kw) -> Param:
+    """Rule for component ``axis`` (0=x, 1=y, 2=z) of the box's *lower* corner.
+
+    ``setFieldsDict`` spells the water box as ``box (x0 y0 z0) ($xmax $ymax $zmax);``
+    -- the upper corner goes through macros the three ``*max`` rules below own,
+    but the lower one is written out as three bare literals, so no key names them
+    and a key-anchored rule cannot reach them.  This builds a rule that anchors on
+    the ``box (`` head, skips the components before it without capturing them, and
+    captures only this one; the skipped ones are matched as literals rather than
+    ``\\S+`` so a line that is not three plain numbers does not match at all.
+
+    All three are ``optional``: a case may write the box differently or omit the
+    line, and then the box simply starts at the origin, which is what the solver
+    does with a missing component -- hence ``default_when_absent``, so the panel
+    shows 0 rather than a blank and the water-depth metric still computes.
+    """
+    before = r"\s+".join([NUM] * axis)
+    after = r"\s+".join([NUM] * (2 - axis))
+    pre = r"\s*box\s+\(\s*" + (before + r"\s+" if axis else "")
+    post = (r"\s+" + after if after else "") + r"\s*\).*$"
+    return Param(
+        id=pid,
+        group="fluid",
+        file="CFD/system/setFieldsDict",
+        pattern=rf"^(?P<pre>{pre})(?P<val>{NUM})(?P<post>{post})",
+        vtype="float",
+        unit="m",
+        label=label,
+        default=0.0,
+        optional=True,
+        default_when_absent=True,
+        **kw,
+    )
+
+
 #: Neither is a property of the mesh, but both are per-run geometry that is
 #: duplicated elsewhere -- the water box against the domain, the decomposition
 #: against the DEM's own processor grid -- which is what the panel compares.
+#:
+#: The box is one volume with six bounds, so each axis gets a row: the lower
+#: bound names its upper through ``partners`` and the two boxes share a line,
+#: exactly as the domain extents above do.  The lower/upper ids stay separate --
+#: the coverage checks read each bound on its own -- it is only the row that is
+#: shared, which is also why the upper bound of an axis is declared right after
+#: its lower one rather than in a block of its own.
 FIELD_PARAMS: List[Param] = [
+    _box_corner(
+        "mesh.sf.xmin", 0, "Water box x lower/upper",
+        partners=("mesh.sf.xmax",),
+    ),
     _scalar(
         "mesh.sf.xmax", "fluid", "CFD/system/setFieldsDict", "xmax",
         vtype="float", unit="m", label="Initial water box x upper bound", default=0.101,
         help="0.101 is slightly larger than the 0.1 domain width, for full coverage; only >= xco2 is required.",
     ),
+    _box_corner(
+        "mesh.sf.ymin", 1, "Water box y lower/upper",
+        partners=("mesh.sf.ymax",),
+    ),
     _scalar(
         "mesh.sf.ymax", "fluid", "CFD/system/setFieldsDict", "ymax",
         vtype="float", unit="m", label="Initial water box y upper bound", default=0.101,
     ),
-    _scalar(
-        "mesh.sf.zmax", "fluid", "CFD/system/setFieldsDict", "zmax",
-        vtype="float", unit="m", label="Initial water surface height", default=0.301,
-        help="Determines the initial water depth (zmax - zco1) and whether the particle is underwater.",
+    _box_corner(
+        "mesh.sf.zmin", 2, "Water box z lower/upper",
+        partners=("mesh.sf.zmax",),
+        help="The box's own floor, so together with zmax it sets the initial water depth; it need not sit on the domain floor.",
     ),
     _scalar(
+        "mesh.sf.zmax", "fluid", "CFD/system/setFieldsDict", "zmax",
+        vtype="float", unit="m", label="Initial water box z upper bound", default=0.301,
+        help="The initial water surface, and so whether the particle starts underwater; "
+             "it may sit above the domain lid to start the case full of water.",
+    ),
+    #: One decomposition, three numbers: the x count names y and z through
+    #: ``partners`` so all three share a row, as the box's bounds share one per
+    #: axis.  Keeping them side by side is the point -- the product on the line
+    #: below only looks right when its three factors are read together.
+    _scalar(
         "mesh.prox", "fluid", "CFD/system/decomposeParDict", "prox",
-        vtype="int", label="Decomposition in x", default=1, range=[1, 512],
+        vtype="int", label="Decomposition x|y|z", default=1, range=[1, 512],
+        partners=("mesh.proy", "mesh.proz"),
     ),
     _scalar(
         "mesh.proy", "fluid", "CFD/system/decomposeParDict", "proy",
@@ -278,9 +348,12 @@ FIELD_PARAMS: List[Param] = [
 # --------------------------------------------------------------------------
 
 RUN_PARAMS: List[Param] = [
+    #: The run's span, written as two lines and shown as one row: the start names
+    #: the end through ``partners``, the same treatment the domain extents get.
     _scalar(
         "run.startTime", "fluid", "CFD/system/controlDict", "startTime",
-        vtype="float", unit="s", label="Start time", default=0.0,
+        vtype="float", unit="s", label="Start/end time", default=0.0,
+        partners=("run.endTime",),
     ),
     _scalar(
         "run.endTime", "fluid", "CFD/system/controlDict", "endTime",
@@ -292,6 +365,14 @@ RUN_PARAMS: List[Param] = [
         vtype="float", unit="s", label="CFD time step", default=0.0002,
         help="Fixed step when adjustTimeStep = no; the coupling period must be an integer multiple of it.",
     ),
+    #: How often a frame lands, which is a fact about the step just above it --
+    #: so it is declared beside the step, ahead of the `writeControl` enum that
+    #: only says what the interval is counted in.
+    _scalar(
+        "run.writeInterval", "fluid", "CFD/system/controlDict", "writeInterval",
+        vtype="float", unit="s", label="Write interval", default=0.01,
+        help="When writeControl is a time unit, frames = endTime / writeInterval.",
+    ),
     Param(
         id="run.writeControl", group="fluid", file="CFD/system/controlDict",
         pattern=r"^(?P<pre>\s*writeControl\s+)(?P<val>[^\s;]+)(?P<post>\s*;.*)$",
@@ -299,11 +380,6 @@ RUN_PARAMS: List[Param] = [
         options=["timeStep", "runTime", "adjustableRunTime", "clockTime", "cpuTime"],
         default="adjustableRunTime",
         help="The trailing ;//timeStep;// is a historical alternative; it is preserved verbatim on write.",
-    ),
-    _scalar(
-        "run.writeInterval", "fluid", "CFD/system/controlDict", "writeInterval",
-        vtype="float", unit="s", label="Write interval", default=0.01,
-        help="When writeControl is a time unit, frames = endTime / writeInterval.",
     ),
     _scalar(
         "run.purgeWrite", "fluid", "CFD/system/controlDict", "purgeWrite",
@@ -464,15 +540,21 @@ COUPLING_PARAMS: List[Param] = [
         help="Used outside the free-surface region; a change alters particle forces and trajectory directly.",
         optional=True,
     ),
+    #: These two are 0/1 flags, not quantities, so they read as switches rather
+    #: than as boxes you can type any number into.  The spellings are the file's
+    #: own ``1``/``0`` -- not the usual ``on``/``off`` of ``bool_true`` /
+    #: ``bool_false`` -- so leaving a switch alone leaves its line byte-identical.
     _cp(
         "coupling.doDivCor", "doDivCor",
-        vtype="int", label="Divergence correction", default=1, range=[0, 1],
+        vtype="bool", label="Divergence correction", default=True,
+        bool_true="1", bool_false="0",
         help="1 projects the corrected particle velocity back onto a divergence-free field; requires phiIB in 0/phiIB and fvSolution.",
         optional=True,
     ),
     _cp(
         "coupling.Exdrag", "Exdrag",
-        vtype="float", label="Explicit drag switch", default=0.0, range=[0.0, 1.0],
+        vtype="bool", label="Explicit drag switch", default=False,
+        bool_true="1", bool_false="0",
         optional=True,
     ),
     _cp(
@@ -586,7 +668,7 @@ DEM_PARAMS: List[Param] = [
     _triple(
         "dem.processors", "particle", _FILE_DEM,
         head=r"\s*processors\s+", tail=r"\s*", sep=(r"\s+", r"\s+"),
-        vtype="int3", label="DEM process layout", default=[1, 1, 4],
+        vtype="int3", label="Process layout", default=[1, 1, 4], compact=True,
         product_of=("mesh.prox", "mesh.proy", "mesh.proz"),
         help="Follows Decomposition in x/y/z in decomposeParDict, which is where the grid is typed; written into this deck on apply.",
     ),
@@ -607,12 +689,19 @@ DEM_PARAMS: List[Param] = [
         help="Follows Coupling interval (DEM steps) in couplingProperties, which is where it is typed; written into this deck on apply.",
     ),
     # --- variables ----------------------------------------------------------
-    _var("dem.xmin", "xmin", vtype="float", unit="m", label="DEM region x min", default=0.0),
-    _var("dem.xmax", "xmax", vtype="float", unit="m", label="DEM region x max", default=0.1),
-    _var("dem.ymin", "ymin", vtype="float", unit="m", label="DEM region y min", default=0.0),
-    _var("dem.ymax", "ymax", vtype="float", unit="m", label="DEM region y max", default=0.1),
-    _var("dem.zmin", "zmin", vtype="float", unit="m", label="DEM region z min", default=0.2),
-    _var("dem.zmax", "zmax", vtype="float", unit="m", label="DEM region z max", default=0.4),
+    #: The DEM region is the same six extents as the mesh's, so each axis gets
+    #: the same one-row treatment: the min names its max through ``partners``.
+    #: The two ids stay separate -- the domain consistency check reads each one
+    #: on its own -- it is only the row that is shared.
+    _var("dem.xmin", "xmin", vtype="float", unit="m", label="Region x min/max",
+         default=0.0, partners=("dem.xmax",)),
+    _var("dem.xmax", "xmax", vtype="float", unit="m", label="Region x max", default=0.1),
+    _var("dem.ymin", "ymin", vtype="float", unit="m", label="Region y min/max",
+         default=0.0, partners=("dem.ymax",)),
+    _var("dem.ymax", "ymax", vtype="float", unit="m", label="Region y max", default=0.1),
+    _var("dem.zmin", "zmin", vtype="float", unit="m", label="Region z min/max",
+         default=0.2, partners=("dem.zmax",)),
+    _var("dem.zmax", "zmax", vtype="float", unit="m", label="Region z max", default=0.4),
     _var(
         "dem.rhop", "rhop", vtype="float", label="rhop variable",
         default=1400, unit="kg/m3",
@@ -630,7 +719,7 @@ DEM_PARAMS: List[Param] = [
     Param(
         id="dem.integr", group="particle", file=_FILE_DEM, card=_CARD_CREATE,
         pattern=r"^(?P<pre>\s*fix\s+integr\s+all\s+)(?P<val>\S+)(?P<post>\s*)$",
-        vtype="enum", label="Particle integration",
+        vtype="enum", label="Integration",
         options=["multisphere", "nve/sphere"], default="nve/sphere",
         help="Use nve/sphere for a single sphere and multisphere for a clump.",
     ),
@@ -640,7 +729,8 @@ DEM_PARAMS: List[Param] = [
         head=r"\s*create_atoms\s+1\s+single\s+", tail=r"\s+units\s+box.*",
         sep=(r"\s+", r"\s+"),
         card=_CARD_CREATE, alt="single",
-        vtype="float3", unit="m", label="Particle initial position", default=[0.05, 0.05, 0.33],
+        vtype="float3", unit="m", label="Initial position", default=[0.05, 0.05, 0.33],
+        compact=True,
         help="Absolute coordinates; should lie inside the DEM region and usually below the water surface.",
     ),
     Param(
@@ -650,7 +740,7 @@ DEM_PARAMS: List[Param] = [
             rf"^(?P<pre>\s*set\s+atom\s+1\s+diameter\s+)(?P<val>{NUM})"
             rf"(?P<post>\s+density\s+{NUM}\s+vx.*)$"
         ),
-        vtype="float", unit="m", label="Particle diameter", default=0.0167,
+        vtype="float", unit="m", label="Diameter", default=0.0167,
         help="Determines cells/diameter and whether the particle spans mesh cells.",
     ),
     Param(
@@ -660,7 +750,7 @@ DEM_PARAMS: List[Param] = [
             rf"^(?P<pre>\s*set\s+atom\s+1\s+diameter\s+{NUM}\s+density\s+)(?P<val>{NUM})"
             rf"(?P<post>\s+vx.*)$"
         ),
-        vtype="float", unit="kg/m3", label="Particle density", default=1500,
+        vtype="float", unit="kg/m3", label="Density", default=1500,
     ),
     _triple(
         "dem.velocity", "particle", _FILE_DEM,
@@ -668,7 +758,8 @@ DEM_PARAMS: List[Param] = [
         tail=r"\s*",
         sep=(r"\s+vy\s+", r"\s+vz\s+"),
         card=_CARD_CREATE, alt="single",
-        vtype="float3", unit="m/s", label="Particle initial velocity", default=[0.0, 0.0, 0.0],
+        vtype="float3", unit="m/s", label="Initial velocity", default=[0.0, 0.0, 0.0],
+        compact=True,
     ),
     # -- multisphere route: particletemplate/multisphere + insert/pack -------
     _ms(
@@ -778,13 +869,22 @@ DEM_PARAMS: List[Param] = [
         vtype="int", label="Monte Carlo attempts", default=10000,
     ),
     # Walls mirror the CFD domain; they are the DEM side of the domain
-    # consistency check.
-    _wall("dem.wall.x1", "xwalls1", "xplane", label="Wall x lower bound"),
-    _wall("dem.wall.x2", "xwalls2", "xplane", label="Wall x upper bound"),
-    _wall("dem.wall.y1", "ywalls1", "yplane", label="Wall y lower bound"),
-    _wall("dem.wall.y2", "ywalls2", "yplane", label="Wall y upper bound"),
-    _wall("dem.wall.z1", "zwalls1", "zplane", label="Wall z lower bound"),
-    _wall("dem.wall.z2", "zwalls2", "zplane", label="Wall z upper bound"),
+    # consistency check.  One axis is one row, as the domain extents are: the
+    # lower wall names the upper through ``partners``, and each box keeps its
+    # own Off/On control beside it -- a deck routinely drops just one of the
+    # pair.  The label is the axis alone (the card says what the rows are, and
+    # the deck's own ``xplane``/``yplane``/``zplane`` keyword is already there),
+    # which is what buys the second switch its room in one track: "bound" would
+    # not fit beside two boxes and their two Off/On pairs in one column.
+    _wall("dem.wall.x1", "xwalls1", "xplane", label="x lower/upper",
+          partners=("dem.wall.x2",)),
+    _wall("dem.wall.x2", "xwalls2", "xplane", label="x upper bound"),
+    _wall("dem.wall.y1", "ywalls1", "yplane", label="y lower/upper",
+          partners=("dem.wall.y2",)),
+    _wall("dem.wall.y2", "ywalls2", "yplane", label="y upper bound"),
+    _wall("dem.wall.z1", "zwalls1", "zplane", label="z lower/upper",
+          partners=("dem.wall.z2",)),
+    _wall("dem.wall.z2", "zwalls2", "zplane", label="z upper bound"),
     # --- screen output and dumping -----------------------------------------
     #: ``thermo`` is anchored by the whitespace after the keyword, which is what
     #: keeps it off ``thermo_style``, ``thermo_modify`` and ``thermo_log`` -- the

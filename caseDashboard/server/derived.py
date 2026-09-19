@@ -383,17 +383,23 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
             ))
 
     # --- water level ------------------------------------------------------
+    # The depth is the box's own height, not its distance above the domain
+    # floor: `zmin` is editable, so a box that floats above `zco1` still holds
+    # exactly `zmax - zmin` of water.  An absent `zmin` reads as 0 rather than
+    # as nothing (see `Param.default_when_absent`), so this metric survives a
+    # case that writes only the upper corner.
     sf_zmax = ctx.num("mesh.sf.zmax")
-    if sf_zmax is not None and z1 is not None:
-        depth = sf_zmax - z1
+    sf_zmin = ctx.num("mesh.sf.zmin")
+    if sf_zmax is not None and sf_zmin is not None:
+        depth = sf_zmax - sf_zmin
         metrics.append(metric(
             "mesh.water_depth", "Initial water depth", depth, "m",
             status=OK if depth > 0 else WARN,
             message="" if depth > 0 else
-            "The initial water surface is not above the domain floor; the initial "
-            "field will have no water",
-            formula="setFields.zmax - zco1",
-            sources=["mesh.sf.zmax", "mesh.zco1"],
+            "The initial water box has no height (zmax is not above zmin); the "
+            "initial field will have no water",
+            formula="setFields.zmax - setFields.zmin",
+            sources=["mesh.sf.zmax", "mesh.sf.zmin"],
         ))
 
     # --- particle placement ----------------------------------------------
@@ -524,20 +530,15 @@ def compute_consistency(ctx: Ctx) -> List[dict]:
                 sources=[_src(ctx, f"mesh.sf.{axis}max")],
             ))
 
+    # The box's own z bounds are deliberately not checked against the domain.
+    # A box that reaches past the lid (`zmax` above `zco2`, which is how a case
+    # starts full of water) or under the floor (`zmin` below `zco1`) is a choice,
+    # not a mistake, and the panel should not argue with it.  Only the above
+    # `setfields.cover.*` checks remain: they compare the box against the *upper*
+    # extent, where falling short leaves a dry corner rather than a wet one.
+    #
+    # `level` is still read here because the particle/water check below needs it.
     level = ctx.num("mesh.sf.zmax")
-    z_lo, z_hi = ctx.num("mesh.zco1"), ctx.num("mesh.zco2")
-    if level is not None and z_lo is not None and z_hi is not None:
-        inside = z_lo <= level <= z_hi
-        out.append(check(
-            "setfields.level", OK if inside else ERROR,
-            "Initial water surface is inside the domain" if inside
-            else "Initial water surface falls outside the domain",
-            f"setFields zmax={_fmt(level)} lies within [{_fmt(z_lo)}, {_fmt(z_hi)}]"
-            if inside else
-            f"setFields zmax={_fmt(level)} falls outside the domain [{_fmt(z_lo)}, {_fmt(z_hi)}]",
-            sources=[_src(ctx, "mesh.sf.zmax"), _src(ctx, "mesh.zco1"), _src(ctx, "mesh.zco2")],
-            param_ids=["mesh.sf.zmax"],
-        ))
 
     # --- parallel layout --------------------------------------------------
     # Nothing to police here any more.  All three copies of the layout -- the

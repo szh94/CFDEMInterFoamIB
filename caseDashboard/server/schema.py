@@ -48,6 +48,15 @@ class Param:
     #: Only the no-match case is excused -- a line that matches twice is still a
     #: malformed file, and one in a file that could not be read is still a gap.
     optional: bool = False
+    #: For an ``optional`` param whose absent state still has a definite value:
+    #: no line does not mean "unknown", it means ``default`` applies -- a water
+    #: box with no lower corner written down starts at the origin.  The panel
+    #: then shows that number (greyed out, still never written) and the derived
+    #: metrics compute with it, instead of reading a blank and skipping the
+    #: metric.  Without the flag an absent optional stays blank: the solver's
+    #: fallback for a coefficient is not necessarily the value the panel
+    #: suggests, so printing it would dress a guess up as a reading.
+    default_when_absent: bool = False
     vtype: str = "float"
     label: str = ""
     unit: str = ""
@@ -82,6 +91,19 @@ class Param:
     #: ``couplingInterval``; there are just three copies instead of one.
     #: ``selftest`` pins the counts that rule implies.
     product_of: Tuple[str, ...] = ()
+    #: The rest of a set of sibling lines that belong together on one row -- the
+    #: min and max of one domain extent (``mesh.xco1`` -> ``mesh.xco2``), or the
+    #: x/y/z of one decomposition (``mesh.prox`` -> ``mesh.proy``,
+    #: ``mesh.proz``).  Only the first of a group carries it; the panel folds the
+    #: named params into this one's row and skips rendering them on their own.
+    #: Purely a display grouping: every id keeps its own rule, line and edit.
+    partners: Tuple[str, ...] = ()
+    #: A triple laid out to fit inside one column of the panel grid: three
+    #: narrow boxes with the label grown to fill the gap in front of them,
+    #: rather than the full-width boxes of a row that spans two columns.  The
+    #: point is the right edge: the last of the three boxes then lines up with
+    #: the single box of the rows above it.  Purely a display choice.
+    compact: bool = False
     #: Free-form note rendered next to the field.
     note: str = ""
     #: Display order inside a group.

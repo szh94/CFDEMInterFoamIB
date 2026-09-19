@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useStore } from "../store";
 import { useIssueMap, useParamsByGroup, useT } from "../hooks";
-import { shortenFile } from "../format";
+import { LEVEL_RANK, shortenFile } from "../format";
 import { ParamField } from "./ParamField";
 import { IconFile } from "./Icons";
 
@@ -90,6 +90,25 @@ export function ParamPanel({ groupId }: Props) {
           showUnused || unused === 0
             ? items
             : items.filter((p) => p.status !== "unused");
+        // The rest of a grouped quantity (a domain extent's min/max, a
+        // decomposition's x/y/z) is folded into its owner's row, so it never
+        // gets a line of its own.  The claim table is built first, which is why
+        // a partner sitting *before* its owner still renders once, where the
+        // owner is.  Claiming needs the partner to be in `shown`: one folded
+        // away by the Show/Hide button degrades to a plain row rather than
+        // vanishing with it.
+        const byId = new Map(shown.map((p) => [p.id, p]));
+        const claimed = new Set(
+          shown.flatMap((p) =>
+            p.partners.filter((id) => byId.has(id)).map((id) => id),
+          ),
+        );
+        const rows = shown
+          .filter((p) => !claimed.has(p.id))
+          .map((p) => ({
+            a: p,
+            rest: p.partners.filter((id) => byId.has(id)).map((id) => byId.get(id)!),
+          }));
         return (
           <section
             key={key}
@@ -138,13 +157,14 @@ export function ParamPanel({ groupId }: Props) {
             </header>
 
             <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 p-1 lg:grid-cols-2 xl:grid-cols-3">
-              {shown.map((p) => (
+              {rows.map(({ a, rest }) => (
                 <ParamField
-                  key={p.id}
-                  param={p}
-                  focused={focusParam === p.id}
-                  inactive={inactiveSet.has(p.id)}
-                  issueLevel={issues[p.id] ?? null}
+                  key={a.id}
+                  param={a}
+                  partners={rest}
+                  focused={[a, ...rest].some((p) => focusParam === p.id)}
+                  inactive={[a, ...rest].some((p) => inactiveSet.has(p.id))}
+                  issueLevel={mergeLevel([a, ...rest].map((p) => issues[p.id]))}
                 />
               ))}
             </div>
@@ -153,4 +173,20 @@ export function ParamPanel({ groupId }: Props) {
       })}
     </div>
   );
+}
+
+/**
+ * The heaviest of the consistency levels of a row's params, which share one
+ * badge slot.  `LEVEL_RANK` is the panel's one ranking (worst first), and
+ * `null` means none of them is named by a problem.
+ */
+function mergeLevel(
+  levels: ("warn" | "error" | undefined)[],
+): "warn" | "error" | null {
+  let worst: "warn" | "error" | null = null;
+  for (const level of levels) {
+    if (!level) continue;
+    if (worst === null || LEVEL_RANK[level] < LEVEL_RANK[worst]) worst = level;
+  }
+  return worst;
 }

@@ -50,12 +50,28 @@ export interface Param {
   default: ParamValue;
   status: ParamStatus;
   readonly: boolean;
+  /** For an `optional` param whose absent state has a settled value (see
+      `Param.default_when_absent`): `value` is that default rather than null, so
+      the box shows a number -- greyed out, never written -- and the derived
+      metrics compute with it. */
+  default_when_absent: boolean;
   /** `status === "ok"`, not readonly and not derived: the only params we write. */
   editable: boolean;
   /** Non-empty when the value is derived from these params': their product for a
       scalar, one source per component for a triple. The panel shows it read-only
       and the backend re-syncs the line on every write. */
   product_of: string[];
+  /** The rest of a set of sibling lines shown on one row (the min and max of one
+      domain extent, the x/y/z of one decomposition): the panel folds the named
+      params into this one's row and skips rendering them on their own.
+      Display-only -- every id keeps its own rule, line and edit. Only the first
+      of a group carries it. */
+  partners: string[];
+  /** A triple laid out to fit inside one column: three narrow boxes with the
+      label grown to fill, instead of a row spanning two columns. Display-only.
+      The point is that the last of the three boxes then lines up with the single
+      box of the rows above it. */
+  compact: boolean;
   /** The line can be commented out to switch it off (see `enabled`). */
   toggle: boolean;
   /** For a toggle param: whether its line is live. Always true otherwise. */

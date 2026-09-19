@@ -110,6 +110,20 @@ export const IconTheme = (p: P) => (
   </svg>
 );
 
+/** The six-dot drag handle.  Filled dots rather than stroked: at the 12px it
+ * is used at, an outlined circle of this radius fills in and the whole thing
+ * reads as one grey smudge. */
+export const IconGrip = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="6" cy="4" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="4" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="8" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="8" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="6" cy="12" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="10" cy="12" r="1.15" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 export const IconChevron = (p: P) => (
   <svg {...base(p)}>
     <path d="M5.5 6.5 8 9.5l2.5-3" />

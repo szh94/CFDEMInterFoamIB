@@ -113,7 +113,7 @@ def run() -> None:
 
 def _read(api: Client) -> None:
     payload = api.get(f"/api/case?path={CASE_REL}")
-    t("every parameter resolved", len(payload["params"]) == 104, len(payload["params"]))
+    t("every parameter resolved", len(payload["params"]) == 107, len(payload["params"]))
     t(
         "panel is fluid / particle / coupling",
         [g["id"] for g in payload["groups"]] == ["fluid", "particle", "coupling"],

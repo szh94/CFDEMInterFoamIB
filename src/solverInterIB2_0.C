@@ -162,7 +162,6 @@ int main(int argc, char *argv[])
                 #include "alphaEqn.H"
             }
             rho == alpha1*rho1 + alpha2*rho2;
-            mixture.correct();
 // 结束 alphaEqnSubCycle.H
 //==============================================================
 //==============================================================
@@ -302,13 +301,8 @@ int main(int argc, char *argv[])
         } 
         // 结束流体求解end solveFlow
         Info << "\nmixture.correct" << endl;
-        mixture.correct();
         turbulence->correct();
 
-        // #include "alphaCourantNo.H"
-        // #include "setDeltaT.H"
-        // mixture.correct();
-        
         
         Info << "CalcVelocityCorrection" << endl;
         particleCloud.calcVelocityCorrection
@@ -324,7 +318,6 @@ int main(int argc, char *argv[])
             cella,
             alpha1
         );
-        p_rgh = p - rho*gh;
         // udivlater = fvc::div(U);
 
         // rho = rhof*voidfraction + rhop*(1 - voidfraction);

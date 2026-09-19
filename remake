@@ -1,9 +1,30 @@
 #!/bin/bash
+#
+# Rebuild the sub-model library and then the solver.
+#
+# Each step says what it is doing, keeps only the line naming the artifact it
+# wrote, and prints its whole output if it fails.  wmake echoes a " -o <target>"
+# line while compiling and linking, and the last one is the link that finished
+# the job.
 
-cd subModels
-wclean
-wmake
+root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
-cd ..
-wclean
-wmake
+build() {
+    local label=$1 dir=$2 out rc
+
+    cd "$dir" || { echo "no such directory: $dir" 1>&2; return 1; }
+
+    printf 'Compiling %s ...\n' "$label"
+    wclean >/dev/null 2>&1
+    out=$(wmake 2>&1)
+    rc=$?
+
+    if [ $rc -ne 0 ]; then
+        printf '%s\n' "$out"
+        return $rc
+    fi
+    printf '%s\n' "$out" | grep ' -o ' | tail -n 1
+}
+
+build subModels "$root/subModels" || exit 1
+build solver    "$root"           || exit 1

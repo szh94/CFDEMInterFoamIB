@@ -196,9 +196,9 @@ bool Foam::cloudInterIB20::evolve
     volScalarField& voidfraction,
     volScalarField& alpha1,
     volScalarField& interFace,
-    volVectorField& ibdragperv,
-    volVectorField& ibdragpressperv,
-    volVectorField& ibdragviscoperv,
+    volVectorField& ibdrag,
+    volVectorField& ibdragP,
+    volVectorField& ibdragV,
     volVectorField& U,
     volScalarField& p
 )
@@ -260,10 +260,10 @@ bool Foam::cloudInterIB20::evolve
         
         // 获得ibdrag信息
         // 此处用于数据输出，可注释掉
-        Info << "Get ibdragperv" << endl;
-        ibdragperv = interIBDragPerV(U,p);
-        ibdragpressperv = IBDragPressPerV(U,p);
-        ibdragviscoperv = IBDragViscoPerV(U,p);
+        Info << "Get ibdrag" << endl;
+        ibdrag = interIBDragPerV(U,p);
+        ibdragP = IBDragPressPerV(U,p);
+        ibdragV = IBDragViscoPerV(U,p);
         // 将计算得到的力传回DEM程序部分
         giveDEMdata();
 
@@ -380,6 +380,9 @@ void Foam::cloudInterIB20::calcVelocityCorrection
         p.correctBoundaryConditions();
 
         Info << "End correct p, U and phi" << endl;
+    }else
+    {
+        Info << "doDivCor == 0, no correction" << endl;
     }
 //---------------------------------------------------------------
 //checkinterface

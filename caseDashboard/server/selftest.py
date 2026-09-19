@@ -26,7 +26,7 @@ REPO_DIR = Path(__file__).resolve().parents[2]
 if str(REPO_DIR) not in sys.path:
     sys.path.insert(0, str(REPO_DIR))
 
-from caseDashboard.server import app, derived, reader, writer  # noqa: E402
+from caseDashboard.server import app, derived, reader, steps, writer  # noqa: E402
 from caseDashboard.server.profiles import ALL_PARAMS, FILES  # noqa: E402
 
 CASE = REPO_DIR / "tutorial" / "single_sphere"
@@ -975,6 +975,48 @@ def _() -> None:
             added.endswith(b"\r\n" if opened["eol"] == "crlf" else b"\n"),
             f"{rel} an added line did not follow the file's ending convention",
         )
+
+
+# ---------------------------------------------------------------------------
+# the step scripts
+# ---------------------------------------------------------------------------
+
+
+@check("a step script's name resolves to its number and the stem after it")
+def _() -> None:
+    # The two spellings in the repository put the marker in different places,
+    # and one of them puts it *after* the extension -- which is why the `.sh`
+    # has to be stripped before the marker is cut out rather than after.
+    for name, want in {
+        "step1_allclean.sh": (1, "allclean"),
+        "step2_blockmeshsetfields.sh": (2, "blockmeshsetfields"),
+        "step3_Allrun.sh": (3, "Allrun"),
+        "step4_reconstruct.sh": (4, "reconstruct"),
+        "step5_ani.sh": (5, "ani"),
+        "step5_draw_curve.sh": (5, "draw_curve"),
+        "allclean_step1": (1, "allclean"),
+        "blockmeshsetfields_step2": (2, "blockmeshsetfields"),
+        "Allrun.sh_step3": (3, "Allrun"),
+        "parCFDDEMrun.sh": (None, ""),
+        "new": (None, ""),
+    }.items():
+        eq(steps.parse_script(name), want, f"{name} parsed as {steps.parse_script(name)!r}")
+
+
+@check("a case's step scripts are found in pipeline order")
+def _() -> None:
+    eq(
+        [(s["step"], s["token"], s["script"]) for s in steps.find_scripts(CASE)],
+        [
+            (1, "allclean", "step1_allclean.sh"),
+            (2, "blockmeshsetfields", "step2_blockmeshsetfields.sh"),
+            (3, "Allrun", "step3_Allrun.sh"),
+            (4, "reconstruct", "step4_reconstruct.sh"),
+            (5, "ani", "step5_ani.sh"),
+            (5, "draw_curve", "step5_draw_curve.sh"),
+        ],
+        "the single_sphere step scripts",
+    )
 
 
 # ---------------------------------------------------------------------------

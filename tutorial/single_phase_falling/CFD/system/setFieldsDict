@@ -14,9 +14,9 @@ FoamFile
     object      setFieldsDict;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-xmax    0.101;
-ymax    0.101;
-zmax    0.301;
+xmax    0.0101;
+ymax    0.0101;
+zmax    0.0401;
 
 defaultFieldValues
 (

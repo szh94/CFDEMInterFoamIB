@@ -5,6 +5,7 @@ import { shortenFile } from "./format";
 import { TabBar } from "./components/TabBar";
 import { TopBar } from "./components/TopBar";
 import { ParamPanel } from "./components/ParamPanel";
+import { StepsPanel } from "./components/StepsPanel";
 import { DerivedPanel } from "./components/DerivedPanel";
 import { DiffDrawer } from "./components/DiffDrawer";
 import { FileEditor } from "./components/FileEditor";
@@ -19,6 +20,8 @@ const GROUP_HINT: Record<string, string> = {
     "Particle side: LIGGGHTS particle properties, the DEM region and the coupling frequency. Wall coordinates get their own card and must match the fluid domain boundary face by face.",
   coupling:
     "Coupling side: the coupling interval is typed here and written into the DEM deck's couple_every when you apply, so the particle tab shows that copy read-only and follows this one as you type.",
+  steps:
+    "Run steps: every step*.sh in the case folder, each against what it has already produced on disk. This page only reads the directory -- nothing here runs a script -- so re-check after running a step in WSL.",
 };
 
 export default function App() {
@@ -31,6 +34,7 @@ export default function App() {
   const cancelRevert = useStore((s) => s.cancelRevert);
   const focusParam = useStore((s) => s.focusParam);
   const focusSeq = useStore((s) => s.focusSeq);
+  const loadScripts = useStore((s) => s.loadScripts);
   const [active, setActive] = useState("fluid");
   const [sidebar, setSidebar] = useState(true);
   const t = useT();
@@ -40,12 +44,26 @@ export default function App() {
   }, [boot]);
 
   const groups = payload?.groups ?? [];
+  const group = groups.find((g) => g.id === active);
 
   useEffect(() => {
     if (groups.length && !groups.some((g) => g.id === active)) {
       setActive(groups[0].id);
     }
   }, [groups, active]);
+
+  /**
+   * The script page answers from the directory, not from the payload, so it has
+   * to ask again every time it is opened -- a script run in WSL in the meantime
+   * changes nothing the dashboard would otherwise notice.
+   *
+   * Keyed on `active` rather than on the tab click, because two other things
+   * move the tab without one: the focus jump below, and the reset when a case
+   * changes its group list.
+   */
+  useEffect(() => {
+    if (active === "steps") void loadScripts();
+  }, [active, loadScripts]);
 
   /**
    * A click in the derived panel asks for a field that may live on another tab, so
@@ -77,7 +95,11 @@ export default function App() {
               <p className="text-[11.5px] leading-relaxed text-ink-3">
                 {t.t(GROUP_HINT[active] ?? "")}
               </p>
-              <ParamPanel groupId={active} />
+              {group?.kind === "scripts" ? (
+                <StepsPanel />
+              ) : (
+                <ParamPanel groupId={active} />
+              )}
             </div>
           )}
         </main>

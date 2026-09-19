@@ -10,6 +10,7 @@ import type {
   PreviewResult,
   RevertResult,
   SavedFile,
+  StepsPayload,
 } from "./types";
 
 /** Relative so the Vite proxy (dev) and the Python static host (prod) agree. */
@@ -77,6 +78,11 @@ export const api = {
     request<{ cases: CaseEntry[]; repo: string }>("/cases"),
 
   case: (path: string) => request<CasePayload>(`/case${q({ path })}`),
+
+  /** The case's `step*.sh` pipeline and what each script has produced.  The
+      backend only looks at the directory listing -- nothing here runs a
+      script, and the panel never offers to. */
+  steps: (path: string) => request<StepsPayload>(`/steps${q({ path })}`),
 
   preview: (path: string, edits: Edit[]) =>
     request<PreviewResult>("/case/preview", {

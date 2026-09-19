@@ -3,6 +3,13 @@ rm ./log_CFDEM_IB
 
 cd ./CFD
 rm -r processor*
+# reconstructed time directories -- everything but the initial 0, which holds
+# the field step2 writes
+for time in [0-9]*; do
+    [ "$time" = 0 ] && continue
+    case "$time" in *[!0-9.]*) continue;; esac
+    rm -rf "$time"
+done
 
 cd ./constant
 rm -r polyMesh

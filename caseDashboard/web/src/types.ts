@@ -86,7 +86,46 @@ export interface Group {
   id: string;
   label: string;
   blurb: string;
+  /** What the tab holds: the ordinary case is fields, `scripts` is the
+      `step*.sh` pipeline, rendered from `/api/steps` rather than the payload. */
+  kind: "params" | "scripts";
   param_ids: string[];
+}
+
+/** How a `step*.sh` script's artifacts look on disk.
+ *
+ * `clean`/`dirty` belong to the cleanup step alone -- it is the one script
+ * whose success is the absence of files, so its verdict is worded as a state
+ * rather than as progress.  `ready` is "the input is there, the output is not
+ * yet", which for the two post-processing steps includes the hand-made frames
+ * and the dumps a run leaves behind. */
+export type StepStatus = "done" | "ready" | "pending" | "clean" | "dirty" | "unknown";
+
+/** One thing a script's check looked for.  `detail` is only ever a number with
+    a unit -- every word around it is the panel's own. */
+export interface StepEvidence {
+  path: string;
+  state: "present" | "absent" | "partial";
+  detail: string;
+}
+
+/** One `step*.sh` in the case directory, against what it has produced. */
+export interface StepScript {
+  id: string;
+  script: string;
+  step: number;
+  token: string;
+  /** Which check the script's name earned; `unknown` when none did. */
+  check: string;
+  /** English fallback title, keyed by `check` for translation. */
+  title: string;
+  status: StepStatus;
+  evidence: StepEvidence[];
+}
+
+export interface StepsPayload {
+  path: string;
+  scripts: StepScript[];
 }
 
 /** A parameter the rules could not locate in this case. */

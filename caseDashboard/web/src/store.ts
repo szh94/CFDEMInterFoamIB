@@ -12,6 +12,7 @@ import type {
   Metric,
   ParamValue,
   PreviewResult,
+  StepScript,
 } from "./types";
 
 export type ToastKind = "ok" | "error" | "warn" | "info";
@@ -210,6 +211,10 @@ interface State {
   edits: Record<string, ParamValue>;
   /** Pending on/off state for toggle params, keyed by id. */
   toggles: Record<string, boolean>;
+  /** The case's `step*.sh` pipeline; `null` until the first check answers. */
+  scripts: StepScript[] | null;
+  /** A check is in flight, so the refresh control can show it. */
+  scriptsLoading: boolean;
   derived: Derived | null;
   /** Cards of the derived panel whose content the last *live* recompute
       changed, each under a counter that advances every time it changes: a card
@@ -248,6 +253,9 @@ interface State {
   setToggle: (id: string, enabled: boolean) => void;
   clearEdit: (id: string) => void;
   resetAll: () => void;
+  /** Re-check what the case's step scripts have produced.  Read-only: nothing
+      here runs a script, it just looks at the directory again. */
+  loadScripts: () => Promise<void>;
   /** Open a case file in the panel, for a parameter we cannot place. */
   openFile: (file: string) => Promise<void>;
   setEditorText: (text: string) => void;
@@ -402,6 +410,8 @@ export const useStore = create<State>()((set, get) => ({
   payload: null,
   edits: {},
   toggles: {},
+  scripts: null,
+  scriptsLoading: false,
   derived: null,
   flashes: {},
   preview: null,
@@ -482,8 +492,12 @@ export const useStore = create<State>()((set, get) => ({
         lastApply: null,
         edits: {},
         toggles: {},
+        scripts: null,
       });
       set({ derived: await api.derive(canonical, []) });
+      // The pipeline is a second read of the same case, and it is small -- so
+      // it goes out with the case rather than waiting for the tab.
+      void get().loadScripts();
       return true;
     } catch (exc) {
       if (!get().payload) set({ payload: null, casePath: null });
@@ -518,6 +532,32 @@ export const useStore = create<State>()((set, get) => ({
     set({ edits: {}, toggles: {}, preview: null });
     const { casePath } = get();
     if (casePath) void api.derive(casePath, []).then((d) => set({ derived: d }));
+  },
+
+  /**
+   * What the case's step scripts have produced, straight from the directory.
+   *
+   * Not on the `deriveSoon` path: that one exists to recompute the parameters
+   * as they are typed into, and none of this depends on them.  It is called
+   * when a case opens, when one is re-read, and every time the tab is opened.
+   */
+  loadScripts: async () => {
+    const wanted = get().casePath;
+    if (!wanted) return;
+    set({ scriptsLoading: true });
+    try {
+      const result = await api.steps(wanted);
+      // The case can be switched while this is in flight; a slow answer for the
+      // one that was open must not land on the one that is now.
+      if (get().casePath !== wanted) return;
+      set({ scripts: result.scripts });
+    } catch (exc) {
+      get().toast("error", tr(get().lang).t("Could not check the scripts"), (exc as Error).message);
+    } finally {
+      // Only clear the flag for the case the answer belongs to: a switch has
+      // already set it again for the new one.
+      if (get().casePath === wanted) set({ scriptsLoading: false });
+    }
   },
 
   openFile: async (file) => {
@@ -586,6 +626,9 @@ export const useStore = create<State>()((set, get) => ({
       set({ payload, preview: null });
       const { edits, toggles } = get();
       set({ derived: await api.derive(casePath, changedEdits(payload, edits, toggles)) });
+      // Re-reading the case is also the natural moment to re-check the
+      // pipeline: saving a file, or switching language, both come through here.
+      void get().loadScripts();
     } catch (exc) {
       get().toast("error", tr(get().lang).t("Re-read failed"), (exc as Error).message);
     } finally {

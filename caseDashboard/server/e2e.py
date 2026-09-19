@@ -52,7 +52,7 @@ def t(name: str, condition, extra: str = "") -> None:
 
 
 def stage_case() -> None:
-    """Copy the parameter list's files byte for byte."""
+    """Copy the parameter list's files byte for byte, plus the step scripts."""
     if STAGE_ROOT.exists():
         shutil.rmtree(STAGE_ROOT)
     STAGE.mkdir(parents=True)
@@ -60,6 +60,10 @@ def stage_case() -> None:
         target = STAGE / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(SRC_CASE / rel, target)
+    # The step scripts are not parameters, so they are not in FILES -- but they
+    # are what `/api/steps` is about, and the staged copy has to have them.
+    for script in sorted(SRC_CASE.glob("step*.sh")):
+        shutil.copyfile(script, STAGE / script.name)
 
 
 class Client:
@@ -92,6 +96,7 @@ def run() -> None:
 
     try:
         _read(api)
+        _steps(api)
         _derive(api)
         _preview(api, dem, original)
         _apply(api, dem, original, original_crlf)
@@ -115,12 +120,22 @@ def _read(api: Client) -> None:
     payload = api.get(f"/api/case?path={CASE_REL}")
     t("every parameter resolved", len(payload["params"]) == 107, len(payload["params"]))
     t(
-        "panel is fluid / particle / coupling",
-        [g["id"] for g in payload["groups"]] == ["fluid", "particle", "coupling"],
+        "panel is fluid / particle / coupling / steps",
+        [g["id"] for g in payload["groups"]] == ["fluid", "particle", "coupling", "steps"],
         [g["id"] for g in payload["groups"]],
     )
+    # Only the last of them is a script list; the three physics tabs hold fields,
+    # and the panel picks which to render off this rather than off the id.
     t(
-        "no steps / active_run leftovers",
+        "only the steps tab is a script list",
+        [g["kind"] for g in payload["groups"]] == ["params", "params", "params", "scripts"],
+        [g.get("kind") for g in payload["groups"]],
+    )
+    # Script state is a fact about the directory, not a dictionary: it is served
+    # by `/api/steps` and must not creep into the per-case payload, which several
+    # things (the case list, the derived panel) take whole.
+    t(
+        "the case payload has no steps / active_run (script state is /api/steps)",
         not any(k in payload for k in ("steps", "active_run")),
         [k for k in payload if k in ("steps", "active_run")],
     )
@@ -179,6 +194,147 @@ def _read(api: Client) -> None:
         and all(p["status"] == "ok" and p["editable"] for p in out),
         [(p["id"], p["status"]) for p in out] or len(out),
     )
+
+
+def _steps(api: Client) -> None:
+    """The run-steps tab: where the pipeline has got to, read off the disk.
+
+    The staged case was copied from the tutorial *without* its artifacts, so
+    every state below is one this test creates -- which is what lets it walk the
+    pipeline from "nothing has run" to "everything has" one artifact at a time,
+    and check the guard rails in between.
+    """
+
+    def scripts() -> dict:
+        return {s["id"]: s for s in api.get(f"/api/steps?path={CASE_REL}")["scripts"]}
+
+    def statuses() -> dict:
+        return {name: s["status"] for name, s in scripts().items()}
+
+    def evidence(name: str) -> dict:
+        return {row["path"]: row for row in scripts()[name]["evidence"]}
+
+    ids = [
+        "step1_allclean.sh",
+        "step2_blockmeshsetfields.sh",
+        "step3_Allrun.sh",
+        "step4_reconstruct.sh",
+        "step5_ani.sh",
+        "step5_draw_curve.sh",
+    ]
+    listed = scripts()
+    t(
+        "the step page lists the six scripts in pipeline order",
+        list(listed) == ids,
+        list(listed),
+    )
+    t(
+        "each script carries the step number and its check",
+        [(listed[i]["step"], listed[i]["check"]) for i in ids]
+        == [(1, "clean"), (2, "mesh"), (3, "run"), (4, "reconstruct"), (5, "gif"), (5, "curve")],
+        [(listed[i]["step"], listed[i]["check"]) for i in ids],
+    )
+
+    st = statuses()
+    t(
+        "with no artifacts the case is clean and nothing has run",
+        st["step1_allclean.sh"] == "clean"
+        and all(v == "pending" for k, v in st.items() if k != "step1_allclean.sh"),
+        st,
+    )
+
+    # One mesh file is not a mesh, but it is already something the cleanup
+    # step would delete -- which is how the first card turns from "clean" to
+    # "artifacts still present" while the second stays unstarted.
+    mesh = STAGE / "CFD" / "constant" / "polyMesh"
+    mesh.mkdir(parents=True)
+    (mesh / "points").write_bytes(b"x")
+    st = statuses()
+    t("a partial mesh does not complete the setup step", st["step2_blockmeshsetfields.sh"] == "pending", st)
+    t("and the case is no longer clean", st["step1_allclean.sh"] == "dirty", st)
+
+    for name in ("faces", "owner", "neighbour", "boundary"):
+        (mesh / name).write_bytes(b"x")
+    st = statuses()
+    t("the full mesh set completes the setup step", st["step2_blockmeshsetfields.sh"] == "done", st)
+    t("the solver step is then ready to run", st["step3_Allrun.sh"] == "ready", st)
+
+    log_dir = STAGE / "log"
+    log_dir.mkdir(parents=True)
+    log = log_dir / "log_CFDEM_IB"
+    log.write_bytes(b"")
+    st = statuses()
+    t(
+        "an empty solver log is not a run",
+        st["step3_Allrun.sh"] != "done",
+        st,
+    )
+    log.write_bytes(b"solver output\n")
+    st = statuses()
+    t("a log with content completes the run", st["step3_Allrun.sh"] == "done", st)
+
+    # `parCFDDEMrun.sh` names where the log goes, and the two cases in this
+    # repository spell it differently -- the multi-sphere one writes it at the
+    # case root.  Either place has to count.
+    log.unlink()
+    (STAGE / "log_CFDEM_IB").write_bytes(b"solver output\n")
+    st = statuses()
+    t("a solver log at the case root counts too", st["step3_Allrun.sh"] == "done", st)
+
+    cfd = STAGE / "CFD"
+    (cfd / "0").mkdir(exist_ok=True)
+    st = statuses()
+    t("the initial field is not a reconstructed time", st["step4_reconstruct.sh"] != "done", st)
+    t(
+        "nor is it something the cleanup step would remove",
+        evidence("step1_allclean.sh")["CFD/<time>"]["state"] == "absent",
+        evidence("step1_allclean.sh")["CFD/<time>"],
+    )
+    (cfd / "0.01").mkdir()
+    (cfd / "0.01" / "U").write_bytes(b"x")
+    st = statuses()
+    t("a time directory completes the reconstruction", st["step4_reconstruct.sh"] == "done", st)
+    # The same directory is a leftover for step1 to clean -- which is what makes
+    # the first card read "artifacts still present" after a run.
+    t(
+        "and the reconstructed time is a leftover for the cleanup step",
+        evidence("step1_allclean.sh")["CFD/<time>"]
+        == {"path": "CFD/<time>", "state": "present", "detail": "1"},
+        evidence("step1_allclean.sh")["CFD/<time>"],
+    )
+
+    ani = STAGE / "ani"
+    ani.mkdir()
+    (ani / "x.0000.png").write_bytes(b"x")
+    st = statuses()
+    t("frames alone mean the GIF can be built", st["step5_ani.sh"] == "ready", st)
+    (ani / "x.gif").write_bytes(b"x")
+    st = statuses()
+    t("the GIF completes the animation step", st["step5_ani.sh"] == "done", st)
+
+    post = STAGE / "DEM" / "post"
+    post.mkdir(parents=True)
+    (post / "dump0.liggghts").write_bytes(b"x")
+    st = statuses()
+    t("a dump alone means the curve can be drawn", st["step5_draw_curve.sh"] == "ready", st)
+    results = STAGE / "results"
+    results.mkdir()
+    (results / "vz_vs_time.png").write_bytes(b"x")
+    st = statuses()
+    t("the plot completes the curve step", st["step5_draw_curve.sh"] == "done", st)
+
+    payload = api.get(f"/api/case?path={CASE_REL}")
+    t(
+        "script state stays out of the case payload",
+        not any(k in payload for k in ("steps", "active_run")),
+        [k for k in payload if k in ("steps", "active_run")],
+    )
+    try:
+        api.get("/api/steps?path=README.md")
+    except urllib.error.HTTPError as exc:
+        t("the step page refuses a path that is not a case", exc.code == 400, exc.code)
+    else:
+        t("the step page refuses a path that is not a case", False, "no error raised")
 
 
 def _derive(api: Client) -> None:

@@ -132,3 +132,10 @@ class ParamGroup:
     label: str
     blurb: str = ""
     params: List[Param] = dc_field(default_factory=list)
+    #: What the tab shows.  ``params`` is the ordinary case -- the fields below
+    #: -- while ``scripts`` marks a tab whose content is a fact about the case
+    #: rather than a dictionary to edit.  Declared here rather than hard-coded
+    #: in the frontend for the same reason ``card``/``partners`` are: the tab
+    #: list is the backend's, and a second copy of it in React would be the one
+    #: that drifts.
+    kind: str = "params"

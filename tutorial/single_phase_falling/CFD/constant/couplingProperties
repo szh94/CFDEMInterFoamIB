@@ -120,8 +120,8 @@ twoWayMPIProps
 IBProps
 {
     maxCellsPerParticle 10000;
-    alphaMin 0.30;
-    scaleUpVol 1.0;
+    alphaMin 0.3;
+    scaleUpVol 1;
 }
 
 bigParticleProps

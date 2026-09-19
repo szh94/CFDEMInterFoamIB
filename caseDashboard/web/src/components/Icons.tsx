@@ -53,6 +53,17 @@ export const IconParticles = (p: P) => (
   </svg>
 );
 
+/** A ticked-off list -- the run steps.  The ticks are what separate it from
+ * `IconGrid`: the point of that tab is what has been *done*, not a table. */
+export const IconSteps = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M2.4 4.4 3.8 5.8l2.3-2.3" />
+    <path d="M8.6 4.6h5" />
+    <path d="M2.4 10.4 3.8 11.8l2.3-2.3" />
+    <path d="M8.6 10.6h5" />
+  </svg>
+);
+
 export const IconCheck = (p: P) => (
   <svg {...base(p)}>
     <path d="M3 8.5 6.5 12 13 4.5" />

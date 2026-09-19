@@ -950,6 +950,15 @@ GROUPS: List[ParamGroup] = [
         blurb="couplingProperties · immersed boundary and coupling interval",
         params=COUPLING_PARAMS,
     ),
+    #: Not a parameter group at all: the case's ``step*.sh`` pipeline, each
+    #: script against what it has already produced.  It carries no params, and
+    #: the panel renders it from ``/api/steps`` instead of ``/api/case`` -- but
+    #: it is a tab like any other, so it is declared beside the other three.
+    ParamGroup(
+        id="steps", label="Steps", kind="scripts",
+        blurb="step*.sh · what each script has already produced",
+        params=[],
+    ),
 ]
 
 #: What each dictionary is *for*, so a card header can read

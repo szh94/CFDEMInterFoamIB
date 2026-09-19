@@ -86,6 +86,25 @@ const ZH_UI: Record<string, string> = {
     "粒子侧：LIGGGHTS 的颗粒属性、DEM 区域与耦合频率。壁面坐标单独成卡，须与流体域边界逐面一致。",
   "Coupling side: the coupling interval is typed here and written into the DEM deck's couple_every when you apply, so the particle tab shows that copy read-only and follows this one as you type.":
     "耦合侧：耦合间隔在这里填写，写入时同步到 DEM 输入的 couple_every，因此粒子页那一项只读，并随这里实时跟随。",
+  "Run steps: every step*.sh in the case folder, each against what it has already produced on disk. This page only reads the directory -- nothing here runs a script -- so re-check after running a step in WSL.":
+    "运行步骤：算例目录下每个 step*.sh，以及它在磁盘上已经产出的东西。本页只读目录、不执行任何脚本；在 WSL 里跑完一步后回到这里重新检查。",
+
+  // -- run steps --
+  "Step {n}": "第 {n} 步",
+  "{n}/{m} steps complete": "{n}/{m} 步已完成",
+  "Re-check": "重新检查",
+  "Done": "已完成",
+  "Ready to run": "可以运行",
+  "Not started": "未开始",
+  "Cleaned": "已清空",
+  "Artifacts still present": "产物仍在",
+  "No check defined for this script": "这个脚本没有对应的检查规则",
+  "Present": "存在",
+  "Partial": "不完整",
+  "Missing": "不在",
+  "Checking the scripts…": "正在检查脚本…",
+  "No step scripts were found in this case.": "本算例里没有 step 脚本。",
+  "Could not check the scripts": "检查脚本失败",
 
   // -- derived panel --
   "Collapse the derived panel": "收起指标面板",
@@ -389,11 +408,28 @@ const ZH_CHECK: Record<string, string> = {
   "run.adaptivestep:info": "自适应时间步已关闭",
 };
 
+/**
+ * Step-script verdicts, keyed by the check id the backend assigns.  A check is
+ * identified by its id rather than by its English title so that rewording the
+ * backend does not silently drop the Chinese -- the same rule `ZH_METRIC`
+ * follows, and for the same reason.
+ */
+const ZH_STEP: Record<string, string> = {
+  "clean": "清空中间产物",
+  "mesh": "建网格与初始场",
+  "run": "运行求解器",
+  "reconstruct": "重建并行结果",
+  "gif": "合成动画 GIF",
+  "curve": "绘制 DEM 曲线",
+  "unknown": "未识别的脚本",
+};
+
 /** Group (tab) names, keyed by group id. */
 const ZH_GROUP: Record<string, string> = {
   "fluid": "流体",
   "particle": "粒子",
   "coupling": "耦合",
+  "steps": "运行步骤",
 };
 
 /** File card names, keyed by repository-relative path. */
@@ -420,7 +456,14 @@ const ZH_CARD: Record<string, string> = {
 };
 
 /** Which table a name belongs to; see `Translator.byId`. */
-export type NameKind = "param" | "group" | "file" | "card" | "metric" | "check";
+export type NameKind =
+  | "param"
+  | "group"
+  | "file"
+  | "card"
+  | "metric"
+  | "check"
+  | "step";
 
 const TABLES: Record<NameKind, Record<string, string>> = {
   param: ZH_PARAM,
@@ -429,6 +472,7 @@ const TABLES: Record<NameKind, Record<string, string>> = {
   card: ZH_CARD,
   metric: ZH_METRIC,
   check: ZH_CHECK,
+  step: ZH_STEP,
 };
 
 /** Substitute `{name}` placeholders, leaving unknown ones alone. */

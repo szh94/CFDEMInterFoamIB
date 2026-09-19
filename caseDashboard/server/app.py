@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import derived as derived_mod
+from . import steps as steps_mod
 from . import writer as writer_mod
 from .profiles import ALL_PARAMS, FILE_LABELS, FILES, GROUPS
 from .reader import FileText, Resolved, read_case, resolved_to_api
@@ -315,7 +316,7 @@ class Dashboard:
             "path": path_id(case_dir),
             "abs_path": str(case_dir),
             "groups": [
-                {"id": g.id, "label": g.label, "blurb": g.blurb,
+                {"id": g.id, "label": g.label, "blurb": g.blurb, "kind": g.kind,
                  "param_ids": [p.id for p in g.params]}
                 for g in GROUPS
             ],
@@ -573,6 +574,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/file":
             case_dir = resolve_case(q.get("path", ""))
             return self._send_json(APP.read_file(case_dir, q.get("file", "")))
+
+        if path == "/api/steps":
+            # A fact about the case's on-disk state, not a dictionary -- so it
+            # is its own endpoint rather than a key in the case payload, and
+            # the panel can ask for it again without re-reading every file.
+            case_dir = resolve_case(q.get("path", ""))
+            return self._send_json({"path": path_id(case_dir), **steps_mod.probe(case_dir)})
 
         raise ApiError(404, f"Unknown endpoint {path}")
 

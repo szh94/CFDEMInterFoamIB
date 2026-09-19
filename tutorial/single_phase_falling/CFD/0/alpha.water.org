@@ -34,9 +34,10 @@ boundaryField
     }
     z2
     {
-        type            inletOutlet;
-        inletValue      uniform 0;
-        value           uniform 0;
+        // type            inletOutlet;
+        // inletValue      uniform 0;
+        // value           uniform 0;
+        type            zeroGradient;
     }
 }
 

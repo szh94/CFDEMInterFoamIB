@@ -61,11 +61,14 @@ python caseDashboard/run.py
 
 ## 界面
 
-三个标签页按物理分面，参数在页内再按来源文件（或独立卡片）分组：
+四个标签页：前三个按物理分面，参数在页内再按来源文件（或独立卡片）分组；第四个只看脚本产物。
 
 1. **流体** — `blockMeshDict`、`setFieldsDict`、`decomposeParDict`、`controlDict`、`parCFDDEMrun.sh`
 2. **粒子** — `in.liggghts_run`，其中壁面单独成一张「壁面 wall 设置」卡片
 3. **耦合** — `couplingProperties`
+4. **运行步骤** — 算例目录下的每个 `step*.sh` 一张卡片，只读盘面看这一步的产物在不在
+   （`/api/steps`）。**本页不执行任何脚本**，只有「重新检查」；在 WSL 里手工跑完一步后
+   切回该页会自动重测。
 
 右侧栏分三块：
 
@@ -261,6 +264,7 @@ caseDashboard/
 | --- | --- | --- |
 | GET | `/api/cases` | 扫描仓库内算例，附各算例识别到的参数数 |
 | GET | `/api/case?path=` | 分组、全部参数及来源行、识别情况（`recognition`） |
+| GET | `/api/steps?path=` | 算例的 `step*.sh` 清单与各自产物的在/不在，**只读探测**（不执行脚本） |
 | POST | `/api/case/preview` | `{path, edits[]}` → diff + 指标 + 校验，**不落盘** |
 | POST | `/api/case/apply` | 同上 → 原子写入 + 返回 before/after 摘要 |
 | POST | `/api/case/revert` | 从快照恢复 |

@@ -521,6 +521,32 @@ COUPLING_PARAMS: List[Param] = [
         pattern=rf"^(?P<pre>\s*scaleUpVol\s+)(?P<val>{REAL_NUM})(?P<post>\s*;.*)$",
         vtype="float", label="IB volume scale factor", default=1.0, range=[0.0, 100.0],
     ),
+    # --- the immersed-boundary force integration -----------------------------
+    #: The exponent of the void-fraction map the cell weight comes from:
+    #: forceInterIB weights a cell at 1 - void**voidExp.  The solver rejects an
+    #: exponent below 1, so that is where the range starts.  1 means the weight
+    #: is the exact fluid fraction, which is the indicator function the
+    #: divergence theorem needs to turn the volume integral back into a surface
+    #: integral over the particle; above 1 the interface cells count for more.
+    #: 2 is the value the decks are tuned around.
+    Param(
+        id="coupling.voidExp", group="coupling", file=_FILE_CP,
+        scope=r"^forceInterIBProps\s*$", scope_style="brace",
+        pattern=rf"^(?P<pre>\s*voidExp\s+)(?P<val>{REAL_NUM})(?P<post>\s*;.*)$",
+        vtype="float", label="IB void exponent (flow-regime dependent)",
+        default=2.0, range=[1.0, 10.0],
+        help="forceInterIB weights each cell of the particle's cell list at "
+             "1 - void**voidExp, so the exponent must be at least 1. 1 gives the exact "
+             "fluid fraction, which is the indicator the divergence theorem needs -- the "
+             "cell list is larger than the particle, and only this weight shrinks the "
+             "volume integral back onto the particle. The exponent is a flow-regime "
+             "knob: the interface cells it up-weights sit in the diffuse transition "
+             "band around the particle, and how much of that band has to count depends "
+             "on the regime the case runs in, not on the grid alone, so the value has "
+             "to be retuned when Re changes rather than carried across regimes. 2 is "
+             "the value the decks here are tuned around.",
+        optional=True,
+    ),
     # --- coefficients the solver has a default for ---------------------------
     #: These five are read only when they are there: the coupling model falls
     #: back on the numbers in ``default`` when the line is missing, so a case is

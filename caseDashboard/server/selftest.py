@@ -51,6 +51,7 @@ OPTIONAL_CP = (
     "coupling.doDivCor",
     "coupling.Exdrag",
     "coupling.dragcorrcoe",
+    "coupling.voidExp",
 )
 
 _results: List[Tuple[str, bool, str]] = []
@@ -226,7 +227,7 @@ def _() -> None:
            "an absent optional parameter was reported as unrecognized")
         # And the rest of the block is untouched by its absence.
         eq([resolved[pid].status for pid in OPTIONAL_CP if pid != "coupling.Exdrag"],
-           ["ok"] * 4, "the neighbouring optional parameters")
+           ["ok"] * 5, "the neighbouring optional parameters")
 
         plan = writer.plan_edits(resolved, files, [writer.Edit("coupling.Exdrag", 1.0)])
         truthy("coupling.Exdrag" in plan.errors,

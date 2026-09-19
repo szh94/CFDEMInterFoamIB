@@ -71,6 +71,7 @@ forceInterIB::forceInterIB
     p_(sm.mesh().lookupObject<volScalarField> (pressureFieldName_)),
     voidFieldName_(propsDict_.lookup("voidFieldName")),
     voidfraction_(sm.mesh().lookupObject<volScalarField> (voidFieldName_)),
+    voidExp_(propsDict_.lookupOrDefault<scalar>("voidExp", 1.0)),
     // phaseName_(propsDict_.lookup("phaseName")),
     // phase_(sm.mesh().lookupObject<volScalarField> (phaseName_)),
     interIBDragPerV_
@@ -116,6 +117,15 @@ forceInterIB::forceInterIB
         forceSubM(iFSub).readSwitches();
 
     particleCloud_.checkCG(false);
+
+    if (voidExp_ < 1.0)
+    {
+        FatalError << "voidExp (" << voidExp_ << ") must be >= 1.0; the cell weight is"
+            << " 1 - pow(void, voidExp), and below 1 a cell that is nearly solid would"
+            << " count for less than its own fluid fraction" << abort(FatalError);
+    }
+
+    Info << "forceInterIB: void exponent = " << voidExp_ << endl;
 }
 
 
@@ -166,13 +176,16 @@ void forceInterIB::setForce() const
                 	if(forceSubM(0).verbose())
                         Info << "cellid =" << cellI << "||";
                     vector rc = particleCloud_.mesh().C()[cellI];
-                    //drag   += h[cellI]*h.mesh().V()[cellI];
+                    // void 映射: void_step = pow(void, voidExp_), 单元权重取 1-void_step.
+                    // 幂映射在整个 [0,1] 上光滑, 且单元 void->1 时权重自动->0,
+                    // 颗粒掠过网格边界不会引起受力突跳
+                    scalar voidStep = pow(voidfraction_[cellI], voidExp_);
                     drag   += h[cellI]*h.mesh().V()[cellI]
-                    * (1 - voidfraction_[cellI])
+                    * (1 - voidStep)
                     * dragcorrcoe
                     ;
                     torque += (rc - positionCenter)^h[cellI]*h.mesh().V()[cellI]
-                    * (1 - voidfraction_[cellI])
+                    * (1 - voidStep)
                     * dragcorrcoe
                     ;
                     // 针对multisphere模型,防止重复计算

@@ -298,6 +298,7 @@ const ZH_PARAM: Record<string, string> = {
   "coupling.IBProps.maxCellsPerParticle": "IB 单颗粒最大单元数",
   "coupling.IBProps.alphaMin": "IB alphaMin",
   "coupling.IBProps.scaleUpVol": "IB 体积放大系数",
+  "coupling.voidExp": "IB void 映射流态相关幂指数",
   "coupling.Coe_V_local": "IB 局部速度系数",
   "coupling.Coe_V_global": "IB 全局速度系数",
   "coupling.doDivCor": "散度修正",

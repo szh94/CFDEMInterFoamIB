@@ -17,7 +17,7 @@ variable            vx             equal   0.0
 variable            vy             equal   0.0
 variable            vz             equal   0.0
     
-variable            timestep       equal   2.5e-05
+variable            timestep       equal   2e-05
 variable            outSteps       equal   400
 ##################################################
 

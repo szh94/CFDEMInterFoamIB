@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="default">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>CFDEMInterFoamIB · Case dashboard</title>
+    <script>
+      // The style attribute has to be on <html> before the first paint, and the
+      // bundle that owns it is itself what triggers that paint -- so this one
+      // line is repeated here rather than in store.ts, which reads the same
+      // `dash.theme` key back a moment later.
+      try {
+        if (localStorage.getItem("dash.theme") === "light") {
+          document.documentElement.dataset.theme = "light";
+          document.documentElement.style.colorScheme = "light";
+        }
+      } catch {
+        /* private mode: the built-in dark default stands */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

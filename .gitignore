@@ -70,3 +70,10 @@ tutorial/single_sphere/ani/
 # CMake / alternative builds
 build/
 cmake-build-*/
+
+# caseDashboard: runtime state (undo snapshots) and build artefacts.
+# The dashboard's own state is per-machine and never belongs in the repo.
+caseDashboard/.cache/
+caseDashboard/web/node_modules/
+caseDashboard/web/dist/
+caseDashboard/**/__pycache__/

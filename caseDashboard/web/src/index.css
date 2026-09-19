@@ -1,0 +1,521 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens.  Tailwind v4 turns each `--color-*` entry into utilities, so
+   `--color-panel` gives `bg-panel` / `text-panel` / `border-panel`.
+
+   The look is iOS "liquid glass": every surface is a thin translucent pane
+   that blurs and saturates the light behind it, with a specular hairline along
+   its top edge and a soft contact shadow below.  A pane only reads as glass if
+   there is something behind it, so the panel fills are translucent and the app
+   draws its own backdrop (`.ambient`) instead of sitting on a flat colour.
+
+   The palette is otherwise unchanged -- a cool graphite base with a single
+   cyan accent.  This is a number-dense engineering tool, so the chrome stays
+   quiet and the values stay loud, glass or no glass.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-base: #080c13;
+
+  /* Translucent fills rather than solid swatches: what shows through them is
+     the whole point.  Opacity modifiers still work (`bg-panel/80`) because
+     Tailwind mixes these with `transparent` instead of assuming an opaque
+     colour. */
+  --color-panel: rgba(24, 34, 45, 0.55);
+  --color-panel-2: rgba(36, 50, 65, 0.5);
+  --color-panel-3: rgba(56, 74, 93, 0.45);
+  --color-line: rgba(255, 255, 255, 0.1);
+  --color-line-soft: rgba(255, 255, 255, 0.06);
+
+  /* Strips and hovers: a card header, the status bar, a row under the cursor.
+     These are white *because the theme is dark* -- the lift has to come from
+     light added on top.  On the light theme the same three steps are dark ink
+     at low alpha, so anything that reaches for a raw `white/5` breaks the
+     moment the backdrop turns pale; hence tokens. */
+  --color-wash: rgba(255, 255, 255, 0.03);
+  --color-wash-2: rgba(255, 255, 255, 0.05);
+  --color-wash-3: rgba(255, 255, 255, 0.1);
+
+  /* The inset well: every place the panel holds text the user typed or the
+     file supplied -- a value box, the enum select, the diff and editor panes.
+     A well is a *recess*, so it moves the opposite way to a wash: darker than
+     its card on the dark theme, lighter on the light one.  It has to be a
+     token for the same reason -- `bg-black/30` is a recess on black and a
+     grey slab on white. */
+  --color-field: rgba(0, 0, 0, 0.3);
+
+  /* Slightly lifted from the flat-panel values: a translucent surface washes
+     small text out a little, so the greys start a shade brighter. */
+  --color-ink: #e6edf3;
+  --color-ink-2: #aebdca;
+  --color-ink-3: #7e93a7;
+  --color-ink-4: #566a7d;
+
+  --color-accent: #35c6d4;
+  --color-accent-2: #1e8d99;
+  --color-accent-ink: #04222a;
+
+  --color-ok: #3fbf7f;
+  --color-info: #4d9dea;
+  --color-warn: #e0a340;
+  --color-error: #e2604f;
+  --color-dirty: #d9a94a;
+
+  /* Continuous corners: glass wants rounder radii than a flat panel does, and
+     retuning the scale here rounds every existing `rounded-*` at once. */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.7rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.35rem;
+  --radius-2xl: 1.7rem;
+
+  --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, SFMono-Regular,
+    "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI",
+    "Microsoft YaHei", sans-serif;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 32%, transparent);
+  }
+
+  /* Numbers must align in columns or the whole panel reads as noise. */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.22);
+    background-clip: padding-box;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer utilities {
+  /* ---- backdrop ------------------------------------------------------- */
+  /* Four soft blobs of light.  Without them a translucent pane has nothing to
+     refract and the whole thing reads as a flat dark rectangle.  Kept faint --
+     the panels sit on top of this and text has to stay the loudest thing.
+     They also do the shadows a favour: a cast shadow only shows up where there
+     is light for it to fall on. */
+  .ambient {
+    background-image:
+      radial-gradient(56rem 38rem at 8% -8%, rgba(53, 198, 212, 0.2), transparent 62%),
+      radial-gradient(50rem 36rem at 96% 2%, rgba(98, 124, 255, 0.19), transparent 64%),
+      radial-gradient(44rem 32rem at 78% 100%, rgba(168, 96, 214, 0.14), transparent 66%),
+      radial-gradient(40rem 30rem at 16% 94%, rgba(46, 150, 210, 0.13), transparent 66%);
+    background-repeat: no-repeat;
+  }
+
+  /* ---- liquid glass --------------------------------------------------- */
+  .glass,
+  .glass-soft,
+  .glass-strong,
+  .btn-glass {
+    --glass-rim: rgba(255, 255, 255, 0.11);
+    /* The elevation, in four tiers: a dark seam, a tight contact shadow that
+       pins the bottom edge, two penumbras that carry the cast, and a wide
+       ambient wash.  On a dark backdrop one big blur reads as nothing -- it is
+       the near, hard shadow that makes a card look lifted off the plane rather
+       than painted on it. */
+    --glass-lift:
+      0 1px 2px rgba(0, 0, 0, 0.5),
+      0 5px 10px -3px rgba(0, 0, 0, 0.55),
+      0 16px 32px -10px rgba(0, 0, 0, 0.62),
+      0 32px 64px -20px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--glass-rim);
+    box-shadow:
+      /* Lit from above, so the top edge catches the light and the bottom edge
+         falls into shade -- together with the dark seam just outside the
+         border that is what gives the pane a thickness. */
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(0, 0, 0, 0.32),
+      var(--glass-lift);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+  }
+
+  /* Light falls from the upper left, so the pane is brightest there and falls
+     off towards the lower right.  That off-centre highlight -- more than the
+     blur -- is what makes the surface read as glass rather than a tint. */
+  .glass,
+  .glass-soft,
+  .glass-strong {
+    background-color: var(--color-panel);
+    background-image:
+      radial-gradient(130% 95% at 0% 0%, rgba(255, 255, 255, 0.075), transparent 58%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012));
+  }
+
+  /* The repeated small panes -- metric and finding cards.  Thinner, less
+     blur: a dozen heavy blurs in one sidebar is a lot of compositing for a
+     difference nobody can see at this size. */
+  .glass-soft {
+    /* Shorter stack: these are the small cards, and a 64px-tall pane casting a
+       32px-tall shadow reads as a mistake rather than as height. */
+    --glass-lift:
+      0 1px 2px rgba(0, 0, 0, 0.45),
+      0 4px 8px -2px rgba(0, 0, 0, 0.5),
+      0 10px 20px -8px rgba(0, 0, 0, 0.55);
+    background-color: var(--color-panel-2);
+    backdrop-filter: blur(12px) saturate(165%);
+    -webkit-backdrop-filter: blur(12px) saturate(165%);
+  }
+
+  /* Menus, modals and toasts float over arbitrary content, so a card's 55%
+     fill would let the page show through the text underneath it.  0.8 turned
+     out to be the same mistake one notch quieter -- the parameter rows behind
+     an open dropdown were still legible through it and competed with the menu's
+     own text, so the fill is nearly opaque now.  A dropdown is read, not
+     looked past. */
+  .glass-strong {
+    /* Menus, modals and toasts are a layer above the cards, so they cast the
+       widest shadow of the three -- that difference in height is the only
+       thing telling the two layers apart. */
+    --glass-lift:
+      0 2px 4px rgba(0, 0, 0, 0.5),
+      0 10px 22px -6px rgba(0, 0, 0, 0.6),
+      0 30px 60px -18px rgba(0, 0, 0, 0.72);
+    background-color: rgba(11, 16, 23, 0.93);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+  }
+
+  /* A chrome bar is glued to the window edge, so it takes a hairline on one
+     side only -- a full border would draw a line across the whole screen. */
+  .glass-bar {
+    background-color: rgba(10, 15, 22, 0.62);
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.012)
+    );
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  /* ---- elevation ------------------------------------------------------ */
+  /* The height is in the resting shadow, not in a hover animation: the card is
+     meant to look like a pane sitting above the surface at all times.  The
+     shadow is a variable so that the inset highlights in `.glass` survive any
+     state that changes it.  Pointing at a card only brightens its rim, the way
+     a real pane picks up more light -- nothing moves. */
+  .lift {
+    transition:
+      box-shadow 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+      border-color 0.22s ease;
+  }
+  .lift:hover {
+    --glass-rim: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ---- buttons -------------------------------------------------------- */
+  /* A button is a chip, not a hole.  With no fill of its own it read as bare
+     text lying on the bar -- the rim and the inset highlight only show up
+     against something.  A faint wash gives it that something, and stays light
+     enough that the pane behind keeps showing through. */
+  .btn-glass {
+    background-color: rgba(255, 255, 255, 0.055);
+    transition:
+      box-shadow 0.18s ease,
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      transform 0.18s ease;
+  }
+  /* Hover has to clear the resting fill by enough to be felt, not measured. */
+  .btn-glass:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.12);
+  }
+  .btn-glass:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  /* Gloss over whatever `bg-*` the element already carries, so a button only
+     has to name its tint once: `--btn-tint` is what the cast shadow glows in,
+     which lets Roll back be amber without a second class for every colour. */
+  .btn-gloss {
+    --btn-tint: var(--color-accent);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.32),
+      rgba(255, 255, 255, 0) 58%
+    );
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 10px 22px -12px color-mix(in oklab, var(--btn-tint) 75%, transparent);
+    transition:
+      transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1),
+      box-shadow 0.18s ease,
+      filter 0.18s ease;
+  }
+  .btn-gloss:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.07);
+  }
+  .btn-gloss:active:not(:disabled) {
+    transform: translateY(0);
+    filter: none;
+  }
+  .btn-gloss-warn {
+    --btn-tint: var(--color-warn);
+  }
+
+  @keyframes dash-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .anim-in {
+    animation: dash-fade-up 0.16s ease-out both;
+  }
+
+  @keyframes dash-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .anim-spin {
+    animation: dash-spin 0.7s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lift,
+    .btn-glass,
+    .btn-gloss,
+    .anim-in {
+      transition: none;
+      animation: none;
+    }
+    .btn-gloss:hover:not(:disabled) {
+      transform: none;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The light style.
+
+   Deliberately *not* a second palette: only the tokens are re-pointed and the
+   three glass tiers keep their structure, so a component written against the
+   tokens themes itself and there is no second set of rules to keep in step.
+   What does change, and could not be tokenised, is the physics of the effect --
+   glass reads as glass because light falls on it, and on a pale backdrop the
+   light has to come from a darker pane rather than a brighter one:
+
+     * the pane fill is white at high alpha, not dark at low alpha;
+     * the specular highlight stays white (it is still the top-left that
+       catches the light) but the *seam* around the pane flips from black to
+       ink, and every shadow drops to a fraction of its dark-theme alpha -- a
+       black 60% cast under a white card is a hole, not a shadow;
+     * the rim hairline goes ink, or the cards lose their edges entirely.
+
+   Where the dark theme is a cool graphite, the light one is warm: an apricot
+   to rose backdrop under translucent white panes, with the neutrals tinted to
+   match it.  The accent stays cyan -- it is the one hue that has to survive
+   being read as a link, a focus ring and a selected tab, and it is the only
+   colour here that this dashboard's own status palette (ok / warn / error /
+   dirty) does not already claim as a warm one.
+
+   These rules sit outside every `@layer` on purpose: Tailwind emits the theme
+   variables into `@layer theme` and the glass classes into `@layer utilities`,
+   and unlayered CSS beats both without needing an `!important` or a selector
+   war over specificity.
+--------------------------------------------------------------------------- */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  /* Warm, and the warmth is not optional: the backdrop is an apricot-to-rose
+     gradient, so every neutral below -- lines, washes, wells, shadows, greys --
+     is the same brown at low alpha.  A cool blue-grey on a peach base does not
+     read as a neutral, it reads as dirt. */
+  --color-base: #fdf1ec;
+
+  --color-panel: rgba(255, 252, 250, 0.6);
+  --color-panel-2: rgba(255, 252, 250, 0.64);
+  --color-panel-3: rgba(255, 252, 250, 0.8);
+  --color-line: rgba(74, 44, 30, 0.15);
+  --color-line-soft: rgba(74, 44, 30, 0.1);
+
+  /* The three washes invert: ink at low alpha instead of white. */
+  --color-wash: rgba(74, 44, 30, 0.035);
+  --color-wash-2: rgba(74, 44, 30, 0.06);
+  --color-wash-3: rgba(74, 44, 30, 0.1);
+
+  /* The well leans the other way: barely-there ink on a white card. */
+  --color-field: rgba(74, 44, 30, 0.055);
+
+  --color-ink: #2e201b;
+  --color-ink-2: #544036;
+  --color-ink-3: #766056;
+  --color-ink-4: #9a8275;
+
+  /* Darkened for a pale backdrop: the cyan has to clear the contrast bar as
+     *text* here, which the dark theme never asks of it, and the button labels
+     that sit on it take white instead of near-black. */
+  --color-accent: #0c8894;
+  --color-accent-2: #0a6b76;
+  --color-accent-ink: #ffffff;
+
+  --color-ok: #1d8a53;
+  --color-info: #1a6cbb;
+  --color-warn: #8f5e15;
+  --color-error: #bb3527;
+  --color-dirty: #86610f;
+}
+
+/* Same four blobs in apricot and rose.  Kept pastel -- a pale backdrop has no
+   dark to hide a saturated tint in, so the alpha here is spent on breadth (a
+   wide, soft falloff) rather than on saturation, and the four stops stay close
+   enough in hue that they blend into one wash instead of four visible circles.
+   The panels are translucent white on top of this, which is what keeps the
+   whole thing from reading as an orange page. */
+html[data-theme="light"] .ambient {
+  background-image:
+    radial-gradient(64rem 46rem at 6% -12%, rgba(255, 178, 132, 0.3), transparent 66%),
+    radial-gradient(58rem 42rem at 100% -2%, rgba(255, 170, 182, 0.28), transparent 68%),
+    radial-gradient(52rem 38rem at 80% 104%, rgba(246, 160, 188, 0.26), transparent 70%),
+    radial-gradient(46rem 36rem at 12% 98%, rgba(255, 198, 150, 0.24), transparent 70%);
+  background-repeat: no-repeat;
+}
+
+html[data-theme="light"] .glass,
+html[data-theme="light"] .glass-soft,
+html[data-theme="light"] .glass-strong,
+html[data-theme="light"] .btn-glass {
+  --glass-rim: rgba(74, 44, 30, 0.13);
+  --glass-lift:
+    0 1px 2px rgba(112, 62, 44, 0.07),
+    0 5px 10px -3px rgba(112, 62, 44, 0.09),
+    0 16px 32px -10px rgba(112, 62, 44, 0.11),
+    0 32px 64px -20px rgba(112, 62, 44, 0.09);
+  box-shadow:
+    /* The top edge still catches the light -- it is just white on white now,
+       which is what gives a fresh pane its shine. */
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(112, 62, 44, 0.05),
+    0 0 0 1px rgba(112, 62, 44, 0.045),
+    var(--glass-lift);
+  /* Less saturation than the dark theme: the backdrop is nearly white, so the
+     same boost mostly amplifies the blobs behind the pane. */
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+}
+
+html[data-theme="light"] .glass,
+html[data-theme="light"] .glass-soft,
+html[data-theme="light"] .glass-strong {
+  background-image:
+    radial-gradient(130% 95% at 0% 0%, rgba(255, 255, 255, 0.85), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16));
+}
+
+html[data-theme="light"] .glass-soft {
+  --glass-lift:
+    0 1px 2px rgba(112, 62, 44, 0.06),
+    0 4px 8px -2px rgba(112, 62, 44, 0.08),
+    0 10px 20px -8px rgba(112, 62, 44, 0.09);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+}
+
+html[data-theme="light"] .glass-strong {
+  --glass-lift:
+    0 2px 4px rgba(112, 62, 44, 0.08),
+    0 10px 22px -6px rgba(112, 62, 44, 0.12),
+    0 30px 60px -18px rgba(112, 62, 44, 0.16);
+  background-color: rgba(255, 251, 249, 0.96);
+  backdrop-filter: blur(32px) saturate(130%);
+  -webkit-backdrop-filter: blur(32px) saturate(130%);
+}
+
+html[data-theme="light"] .glass-bar {
+  background-color: rgba(255, 250, 247, 0.78);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.6),
+    rgba(255, 255, 255, 0.2)
+  );
+  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+html[data-theme="light"] .btn-glass {
+  background-color: rgba(74, 44, 30, 0.05);
+}
+html[data-theme="light"] .btn-glass:hover:not(:disabled) {
+  background-color: rgba(74, 44, 30, 0.09);
+}
+
+/* The gloss itself is unchanged -- a white sheen over the accent fill is right
+   on either backdrop -- but its cast has to stop being a black smudge. */
+html[data-theme="light"] .btn-gloss {
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 1px 2px rgba(112, 62, 44, 0.2),
+    0 10px 22px -12px color-mix(in oklab, var(--btn-tint) 70%, transparent);
+}
+
+html[data-theme="light"] .lift:hover {
+  --glass-rim: rgba(74, 44, 30, 0.22);
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(74, 44, 30, 0.2);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(74, 44, 30, 0.32);
+  background-clip: padding-box;
+}

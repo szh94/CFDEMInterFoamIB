@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>算例参数仪表盘</title>
+<!--
+  Double-clickable entry point.  It cannot *start* the backend (a file:// page
+  has no way to spawn a process), so when the backend is down it points at
+  start-dashboard.bat instead of pretending to launch anything.
+
+  Opened from file://, so: no external assets, no build step, styles inlined.
+-->
+<style>
+  :root {
+    --base: #0b1015;
+    --panel: #121a22;
+    --panel-2: #17212b;
+    --line: #263543;
+    --ink: #e6edf3;
+    --ink-3: #6e8398;
+    --ink-4: #4a5b6b;
+    --accent: #35c6d4;
+    --accent-ink: #04222a;
+    --ok: #3fbf7f;
+    --warn: #e0a340;
+    --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+    --sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: var(--base);
+    background-image: radial-gradient(circle at 50% 0%, rgba(53, 198, 212, .07), transparent 60%);
+    color: var(--ink);
+    font: 14px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: min(30rem, calc(100vw - 3rem));
+    padding: 1.75rem;
+    border: 1px solid var(--line);
+    border-radius: .75rem;
+    background: var(--panel);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
+  }
+  h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+  .sub { margin: .35rem 0 1.4rem; font-size: 11.5px; color: var(--ink-4); }
+  #status { display: flex; align-items: baseline; gap: .5rem; min-height: 1.5rem; }
+  #status .dot {
+    flex: none;
+    width: .5rem; height: .5rem;
+    border-radius: 50%;
+    background: var(--ink-4);
+    transform: translateY(-1px);
+  }
+  #status[data-kind="wait"] .dot { background: var(--ink-3); animation: pulse 1s ease-in-out infinite; }
+  #status[data-kind="ok"]   .dot { background: var(--ok); }
+  #status[data-kind="down"] .dot { background: var(--warn); }
+  #status .text { font-size: 13px; }
+  #status[data-kind="down"] .text { color: var(--warn); }
+  #note { margin: .45rem 0 0; font-size: 11.5px; line-height: 1.7; color: var(--ink-3); }
+  #note:empty { display: none; }
+  .row { display: flex; align-items: center; gap: .6rem; margin-top: 1.6rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .95rem;
+    border: 0; border-radius: .4rem;
+    background: var(--accent); color: var(--accent-ink);
+    font: 600 12.5px var(--sans);
+    text-decoration: none; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.1); }
+  .btn[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+  .ghost {
+    padding: .5rem .8rem;
+    border: 1px solid var(--line); border-radius: .4rem;
+    background: var(--panel-2); color: var(--ink-3);
+    font: 12px var(--sans); cursor: pointer;
+  }
+  .ghost:hover { color: var(--ink); }
+  code {
+    padding: .1rem .3rem;
+    border-radius: .25rem;
+    background: var(--panel-2);
+    font-family: var(--mono); font-size: 11.5px;
+    color: var(--ink);
+  }
+  @keyframes pulse { 50% { opacity: .3; } }
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>CFDEMInterFoamIB · 算例参数仪表盘</h1>
+    <p class="sub">本地参数编辑器：读 / 改 / 预览 diff / 写入 / 回滚。不编译、不跑求解器。</p>
+
+    <div id="status" data-kind="wait">
+      <span class="dot"></span>
+      <span class="text">正在检查后端 …</span>
+    </div>
+    <p id="note"></p>
+
+    <div class="row">
+      <a id="open" class="btn" href="http://127.0.0.1:8765/" aria-disabled="true">打开仪表盘</a>
+      <button id="retry" class="ghost" type="button">重新检查</button>
+    </div>
+  </main>
+
+<script>
+  "use strict";
+
+  var APP = "http://127.0.0.1:8765/";
+  var statusEl = document.getElementById("status");
+  var noteEl = document.getElementById("note");
+  var openEl = document.getElementById("open");
+  var retryEl = document.getElementById("retry");
+
+  function render(kind, text, note) {
+    statusEl.dataset.kind = kind;
+    statusEl.querySelector(".text").textContent = text;
+    noteEl.innerHTML = note || "";
+  }
+
+  /**
+   * Reachability only.  `no-cors` keeps the response opaque -- we never read the
+   * dashboard's data here, we just need "connected" vs "refused", which the
+   * backend can answer without any CORS headers.  A file:// page is not allowed
+   * to read a cross-origin response anyway.
+   */
+  function probe() {
+    return fetch(APP + "api/cases", { mode: "no-cors", cache: "no-store" })
+      .then(function () { return true; })
+      .catch(function () { return false; });
+  }
+
+  function check(autoOpen) {
+    render("wait", "正在检查后端 …", "");
+    openEl.setAttribute("aria-disabled", "true");
+    document.body.dataset.probe = "wait";
+
+    probe().then(function (up) {
+      // Read by the headless screenshot/self-check harness.
+      document.body.dataset.probe = up ? "up" : "down";
+
+      if (up) {
+        openEl.setAttribute("aria-disabled", "false");
+        if (autoOpen) {
+          render("ok", "后端运行中，正在打开仪表盘 …", "");
+          location.replace(APP);
+          return;
+        }
+        render("ok", "后端运行中。", "");
+        return;
+      }
+
+      render(
+        "down",
+        "后端未运行。",
+        "先双击 <code>caseDashboard\\start-dashboard.bat</code>，它会启动后端并自动打开浏览器。<br>" +
+        "已经在跑却看到这条，就把地址栏换成 <code>http://127.0.0.1:8765/</code>。"
+      );
+    });
+  }
+
+  retryEl.addEventListener("click", function () { check(false); });
+  // A manual click is the user's intent, so never bounce that one.
+  openEl.addEventListener("click", function () {
+    openEl.setAttribute("aria-disabled", "false");
+  });
+
+  check(true);
+</script>
+</body>
+</html>

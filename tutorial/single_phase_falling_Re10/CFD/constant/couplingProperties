@@ -23,7 +23,7 @@ FoamFile
 
 //===========================================================================//
 // sub-models & settings
-verbose on;
+verbose off;
 
 modelType none;
 
@@ -96,7 +96,7 @@ forceInterIBProps
     velFieldName "U";
     pressureFieldName "p";
     voidFieldName "voidfraction";
-    voidExp 1.1;
+    voidExp 1.25;
 }
 
 ArchimedesIBProps
@@ -153,5 +153,5 @@ engineIBProps
 Coe_V_local             0.6;
 Coe_V_global            1;
 
-doDivCor                1;
+doDivCor                0;
 // ************************************************************************* //

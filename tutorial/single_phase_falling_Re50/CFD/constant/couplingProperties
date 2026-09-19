@@ -23,7 +23,7 @@ FoamFile
 
 //===========================================================================//
 // sub-models & settings
-verbose on;
+verbose off;
 
 modelType none;
 

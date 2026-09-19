@@ -23,7 +23,7 @@ FoamFile
 
 //===========================================================================//
 // sub-models & settings
-verbose on;
+verbose off;
 
 modelType none;
 
@@ -96,7 +96,7 @@ forceInterIBProps
     velFieldName "U";
     pressureFieldName "p";
     voidFieldName "voidfraction";
-    voidExp 2;
+    voidExp 1.9;
 }
 
 ArchimedesIBProps

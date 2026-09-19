@@ -4,11 +4,11 @@ thermo_log              ../log/log_thermo.txt
 
 #变量定义
 variable            xmin           equal   0.0
-variable            xmax           equal   0.01
+variable            xmax           equal   0.006
 variable            ymin           equal   0.0
-variable            ymax           equal   0.01
+variable            ymax           equal   0.006
 variable            zmin           equal   0
-variable            zmax           equal   0.03
+variable            zmax           equal   0.02
     
 variable            posx           equal   ${xmax}/2
 variable            posy           equal   ${ymax}/2
@@ -17,8 +17,6 @@ variable            vx             equal   0.0
 variable            vy             equal   0.0
 variable            vz             equal   0.0
     
-variable            rhop           equal   1250
-
 variable            timestep       equal   0.00001
 variable            outSteps       equal   500
 ##################################################
@@ -59,10 +57,10 @@ timestep            ${timestep}
 fix                 gravi all gravity 9.81 vector 0.0 0.0 -1.0
 
 # walls
-fix                 xwalls1 all wall/gran model hertz tangential history primitive type 1 xplane 0.0
-fix                 xwalls2 all wall/gran model hertz tangential history primitive type 1 xplane 0.01
-fix                 ywalls1 all wall/gran model hertz tangential history primitive type 1 yplane 0.0
-fix                 ywalls2 all wall/gran model hertz tangential history primitive type 1 yplane 0.01
+# fix                 xwalls1 all wall/gran model hertz tangential history primitive type 1 xplane 0.0
+# fix                 xwalls2 all wall/gran model hertz tangential history primitive type 1 xplane 0.01
+# fix                 ywalls1 all wall/gran model hertz tangential history primitive type 1 yplane 0.0
+# fix                 ywalls2 all wall/gran model hertz tangential history primitive type 1 yplane 0.01
 fix                 zwalls1 all wall/gran model hertz tangential history primitive type 1 zplane 0
 # fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane 0.03
 
@@ -71,8 +69,8 @@ fix                 cfd  all couple/cfd couple_every 20 mpi
 fix                 cfd2 all couple/cfd/force
 
 #create single partciles
-create_atoms       1 single 0.005 0.005 0.025  units box
-set                atom 1 diameter 0.00167 density 1250 vx 0 vy 0 vz 0
+create_atoms       1 single 0.003 0.003 0.018  units box
+set                atom 1 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0
 
 #apply nve integration to all particles that are inserted as single particles
 fix                 integr all nve/sphere

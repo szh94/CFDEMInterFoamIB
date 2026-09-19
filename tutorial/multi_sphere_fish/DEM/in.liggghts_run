@@ -19,8 +19,6 @@ variable            vx             equal   0.0
 variable            vy             equal   0.0
 variable            vz             equal   0.0
     
-variable            rhop           equal   1010
-
 variable            timestep       equal   0.00001
 variable            outSteps       equal   1000
 ##################################################
@@ -76,7 +74,7 @@ fix                 cfd2 all couple/cfd/force
 #distributions for insertion
 fix                 pts1 all particletemplate/multisphere 15485863 &
                     atom_type 1 &
-                    density constant ${rhop} &
+                    density constant 1010 &
                     nspheres 13 &
                     ntry 1000000 &
                     spheres file ../DEM/data/fish &

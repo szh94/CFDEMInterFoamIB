@@ -33,13 +33,13 @@ if str(REPO_DIR) not in sys.path:
 from caseDashboard.server import app as backend  # noqa: E402
 from caseDashboard.server.profiles import FILES  # noqa: E402
 
-SRC_CASE = REPO_DIR / "tutorial" / "single_sphere"
+SRC_CASE = REPO_DIR / "tutorial" / "two_phase_sphere_settling"
 #: A second, read-only case the parameter list was *not* written for.  It is only
 #: ever read -- nothing in this suite writes to tutorial/.
 OTHER_CASE = REPO_DIR / "tutorial" / "multi_sphere_fish"
 STAGE_ROOT = REPO_DIR / "caseDashboard" / ".cache" / "e2e"
-STAGE = STAGE_ROOT / "single_sphere"
-CASE_REL = "caseDashboard/.cache/e2e/single_sphere"
+STAGE = STAGE_ROOT / "two_phase_sphere_settling"
+CASE_REL = "caseDashboard/.cache/e2e/two_phase_sphere_settling"
 DEM_REL = "DEM/in.liggghts_run"
 
 PORT = backend.PORT + 2
@@ -118,7 +118,7 @@ def run() -> None:
 
 def _read(api: Client) -> None:
     payload = api.get(f"/api/case?path={CASE_REL}")
-    t("every parameter resolved", len(payload["params"]) == 108, len(payload["params"]))
+    t("every parameter resolved", len(payload["params"]) == 105, len(payload["params"]))
     t(
         "panel is fluid / particle / coupling / steps",
         [g["id"] for g in payload["groups"]] == ["fluid", "particle", "coupling", "steps"],
@@ -319,7 +319,7 @@ def _steps(api: Client) -> None:
     t("a dump alone means the curve can be drawn", st["step5_draw_curve.sh"] == "ready", st)
     results = STAGE / "results"
     results.mkdir()
-    (results / "vz_vs_time.png").write_bytes(b"x")
+    (results / f"{STAGE.name}_vz_vs_time.png").write_bytes(b"x")
     st = statuses()
     t("the plot completes the curve step", st["step5_draw_curve.sh"] == "done", st)
 
@@ -630,7 +630,7 @@ def _browse(api: Client) -> None:
     t("a container of cases is not itself a case", not listing["is_case"], listing)
     t(
         "a case is flagged so the browser can offer it",
-        by_name.get("single_sphere", {}).get("is_case") is True,
+        by_name.get("two_phase_sphere_settling", {}).get("is_case") is True,
         listing["entries"],
     )
 
@@ -640,7 +640,7 @@ def _browse(api: Client) -> None:
     staged = api.get("/api/browse?path=caseDashboard/.cache/e2e")
     t(
         "an explicitly named hidden directory still opens",
-        {e["name"] for e in staged["entries"]} == {"single_sphere"},
+        {e["name"] for e in staged["entries"]} == {"two_phase_sphere_settling"},
         staged["entries"],
     )
 
@@ -808,7 +808,7 @@ def _unfamiliar(api: Client) -> None:
         ),
     )
 
-    # The mirror image of single_sphere: the multisphere route is live and
+    # The mirror image of two_phase_sphere_settling: the multisphere route is live and
     # editable here, and the single-particle lines the deck has commented out are
     # unused rather than unlocatable.
     nspheres = next(p for p in payload["params"] if p["id"] == "dem.ms.nspheres")

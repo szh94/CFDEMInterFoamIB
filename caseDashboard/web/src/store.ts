@@ -478,7 +478,7 @@ export const useStore = create<State>()((set, get) => ({
     try {
       const payload = await api.case(path);
       // The payload carries the canonical repo-relative path; use it so a
-      // hand-typed `tutorial\single_sphere` or an absolute path ends up as the
+      // hand-typed `tutorial\two_phase_sphere_settling` or an absolute path ends up as the
       // same string the case list uses.
       const canonical = payload.path;
       // Clear the pending edits only *after* the new case loaded.  A failed

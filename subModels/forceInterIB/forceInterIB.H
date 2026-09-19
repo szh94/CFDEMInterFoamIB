@@ -79,7 +79,7 @@ private:
     const volScalarField& voidfraction_;
 
     // void 的幂指数映射: void_step = pow(void, voidExp_), 单元权重 = 1 - void_step.
-    // voidExp_ >= 1: 取 1 即精确的流体体积分数, 见 setForce()
+    // voidExp_ >= 0: 取 1 即精确的流体体积分数, 取 0 则权重恒为 0 (不施力), 见 setForce()
     scalar voidExp_;
 
     // word phaseName_;

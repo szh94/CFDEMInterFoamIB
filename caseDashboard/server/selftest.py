@@ -29,7 +29,7 @@ if str(REPO_DIR) not in sys.path:
 from caseDashboard.server import app, derived, reader, steps, writer  # noqa: E402
 from caseDashboard.server.profiles import ALL_PARAMS, FILES  # noqa: E402
 
-CASE = REPO_DIR / "tutorial" / "single_sphere"
+CASE = REPO_DIR / "tutorial" / "two_phase_sphere_settling"
 #: The multisphere case.  It is only ever *read* here -- nothing in this suite
 #: writes to ``tutorial/``.
 FISH = REPO_DIR / "tutorial" / "multi_sphere_fish"
@@ -49,8 +49,6 @@ OPTIONAL_CP = (
     "coupling.Coe_V_local",
     "coupling.Coe_V_global",
     "coupling.doDivCor",
-    "coupling.Exdrag",
-    "coupling.dragcorrcoe",
     "coupling.voidExp",
 )
 
@@ -92,7 +90,7 @@ def render_all(plan, files) -> Dict[str, str]:
 
 def copy_case(tmp: Path) -> Path:
     """Copy only the files the parameter list reads, preserving bytes."""
-    dest = tmp / "single_sphere"
+    dest = tmp / "two_phase_sphere_settling"
     dest.mkdir(parents=True)
     for rel in FILES:
         target = dest / rel
@@ -199,25 +197,26 @@ def _() -> None:
         for pid in OPTIONAL_CP
         if not resolved[pid].param.optional or resolved[pid].status != "ok"
     ]
-    eq(bad, [], "optional parameters that did not resolve in single_sphere")
+    eq(bad, [], "optional parameters that did not resolve in two_phase_sphere_settling")
 
 
 @check("an optional setting the case leaves out reads optional, not unresolved")
 def _() -> None:
+    absent = "coupling.voidExp"
     with tempfile.TemporaryDirectory() as tmp:
         target = copy_case(Path(tmp))
         path = target / CP
         kept = "".join(
             line
             for line in path.read_text(encoding="utf-8").splitlines(keepends=True)
-            if "Exdrag" not in line
+            if "voidExp" not in line
         )
         # Bytes, not text: the file's own line endings are part of what the
         # reader sees.
         path.write_bytes(kept.encode("utf-8"))
 
         resolved, files = reader.read_case(target)
-        r = resolved["coupling.Exdrag"]
+        r = resolved[absent]
         eq(r.status, "optional", "status")
         eq(r.value, None, "value")
         eq(reader.resolved_to_api(r)["editable"], False, "editable")
@@ -225,12 +224,14 @@ def _() -> None:
         # problem to report.
         eq([u["id"] for u in app.recognition(resolved, files)["unrecognized"]], [],
            "an absent optional parameter was reported as unrecognized")
-        # And the rest of the block is untouched by its absence.
-        eq([resolved[pid].status for pid in OPTIONAL_CP if pid != "coupling.Exdrag"],
-           ["ok"] * 5, "the neighbouring optional parameters")
+        # And the rest of the block is untouched by its absence.  The count comes
+        # off OPTIONAL_CP rather than being written out, for the reason that
+        # list's own comment gives.
+        eq([resolved[pid].status for pid in OPTIONAL_CP if pid != absent],
+           ["ok"] * (len(OPTIONAL_CP) - 1), "the neighbouring optional parameters")
 
-        plan = writer.plan_edits(resolved, files, [writer.Edit("coupling.Exdrag", 1.0)])
-        truthy("coupling.Exdrag" in plan.errors,
+        plan = writer.plan_edits(resolved, files, [writer.Edit(absent, 2.0)])
+        truthy(absent in plan.errors,
                "a line the case does not have was accepted for writing")
 
 
@@ -362,11 +363,12 @@ def _() -> None:
 
 @check("the multisphere case writes each value back byte-identically")
 def _() -> None:
-    # The echo above runs on single_sphere, where the whole multisphere route is
+    # The echo above runs on two_phase_sphere_settling, where the whole multisphere route is
     # unused and therefore unwritable -- so it cannot see those rules at all.
     # This one echoes the fish deck's own values back at it, which is what
-    # catches a regex over-capturing an ``&`` continuation, a ``${rhop}`` or
-    # another token sharing the line.
+    # catches a regex over-capturing an ``&`` continuation or the token beside
+    # it -- ``spheres file ../DEM/data/fish`` shares its line with the rest of
+    # the fix block.
     with tempfile.TemporaryDirectory() as tmp:
         target = Path(tmp) / "multi_sphere_fish"
         (target / "DEM").mkdir(parents=True)
@@ -732,7 +734,7 @@ def _() -> None:
             f"{mid}: expected ≈{want}, got {got} ({text!r})",
         )
 
-    # These three describe the single_sphere mesh, so they move whenever its
+    # These three describe the two_phase_sphere_settling mesh, so they move whenever its
     # blockMeshDict does (45x45x90 over a 0.1 m cube at the time of writing).
     close("mesh.ncells", 250000, 1e-9)
     # The merged card reports "Δx × Δy × Δz"; the leading number is Δx.
@@ -881,7 +883,7 @@ def _() -> None:
     eq(listing["parent"], "", "the parent of tutorial should be the repository root")
     truthy(not listing["is_case"], "tutorial holds cases but is not one")
     flagged = {e["name"]: e["is_case"] for e in listing["entries"]}
-    truthy(flagged.get("single_sphere"), "single_sphere was not flagged as a case")
+    truthy(flagged.get("two_phase_sphere_settling"), "two_phase_sphere_settling was not flagged as a case")
     truthy(flagged.get("multi_sphere_fish"), "multi_sphere_fish was not flagged as a case")
 
     # The repository root is where browsing starts, but it is not a ceiling: its
@@ -1016,7 +1018,7 @@ def _() -> None:
             (5, "ani", "step5_ani.sh"),
             (5, "draw_curve", "step5_draw_curve.sh"),
         ],
-        "the single_sphere step scripts",
+        "the two_phase_sphere_settling step scripts",
     )
 
 

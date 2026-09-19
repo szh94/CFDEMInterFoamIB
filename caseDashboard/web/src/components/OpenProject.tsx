@@ -150,7 +150,7 @@ export function OpenProject() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void openTarget(path);
                 }}
-                placeholder="tutorial/single_sphere"
+                placeholder="tutorial/two_phase_sphere_settling"
                 spellCheck={false}
                 disabled={disabled}
                 className="min-w-0 flex-1 rounded border border-line bg-field px-2 py-1.5 font-mono text-[11.5px] text-ink outline-none transition placeholder:text-ink-3 focus:border-accent/60 disabled:opacity-50"

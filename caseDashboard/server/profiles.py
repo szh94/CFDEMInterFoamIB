@@ -524,31 +524,35 @@ COUPLING_PARAMS: List[Param] = [
     # --- the immersed-boundary force integration -----------------------------
     #: The exponent of the void-fraction map the cell weight comes from:
     #: forceInterIB weights a cell at 1 - void**voidExp.  The solver rejects an
-    #: exponent below 1, so that is where the range starts.  1 means the weight
+    #: exponent below 0, so that is where the range starts.  1 means the weight
     #: is the exact fluid fraction, which is the indicator function the
     #: divergence theorem needs to turn the volume integral back into a surface
-    #: integral over the particle; above 1 the interface cells count for more.
+    #: integral over the particle; above 1 the interface cells count for more,
+    #: and 0 flattens the weight to zero everywhere, i.e. no IB force at all.
     #: 2 is the value the decks are tuned around.
     Param(
         id="coupling.voidExp", group="coupling", file=_FILE_CP,
         scope=r"^forceInterIBProps\s*$", scope_style="brace",
         pattern=rf"^(?P<pre>\s*voidExp\s+)(?P<val>{REAL_NUM})(?P<post>\s*;.*)$",
         vtype="float", label="IB void exponent (flow-regime dependent)",
-        default=2.0, range=[1.0, 10.0],
+        default=2.0, range=[0.0, 10.0],
         help="forceInterIB weights each cell of the particle's cell list at "
-             "1 - void**voidExp, so the exponent must be at least 1. 1 gives the exact "
-             "fluid fraction, which is the indicator the divergence theorem needs -- the "
-             "cell list is larger than the particle, and only this weight shrinks the "
-             "volume integral back onto the particle. The exponent is a flow-regime "
-             "knob: the interface cells it up-weights sit in the diffuse transition "
-             "band around the particle, and how much of that band has to count depends "
-             "on the regime the case runs in, not on the grid alone, so the value has "
-             "to be retuned when Re changes rather than carried across regimes. 2 is "
-             "the value the decks here are tuned around.",
+             "1 - void**voidExp. 1 gives the exact fluid fraction, which is the "
+             "indicator the divergence theorem needs -- the cell list is larger than "
+             "the particle, and only this weight shrinks the volume integral back onto "
+             "the particle. The exponent is a flow-regime knob: the interface cells it "
+             "up-weights sit in the diffuse transition band around the particle, and how "
+             "much of that band has to count depends on the regime the case runs in, not "
+             "on the grid alone, so the value has to be retuned when Re changes rather "
+             "than carried across regimes. Going down to 0 is allowed and is a valid "
+             "degenerate setting: void**0 is 1 in every cell, so the weight is "
+             "identically 0 and the particles feel no IB force; the solver only refuses "
+             "a negative exponent, which flips the map and gives near-solid cells a "
+             "weight above 1. 2 is the value the decks here are tuned around.",
         optional=True,
     ),
     # --- coefficients the solver has a default for ---------------------------
-    #: These five are read only when they are there: the coupling model falls
+    #: These three are read only when they are there: the coupling model falls
     #: back on the numbers in ``default`` when the line is missing, so a case is
     #: free to leave any of them out and the deck still runs.  Which is what
     #: ``Param.optional`` says -- absent reads as a grey "Optional" row rather
@@ -566,26 +570,15 @@ COUPLING_PARAMS: List[Param] = [
         help="Used outside the free-surface region; a change alters particle forces and trajectory directly.",
         optional=True,
     ),
-    #: These two are 0/1 flags, not quantities, so they read as switches rather
-    #: than as boxes you can type any number into.  The spellings are the file's
+    #: This one is a 0/1 flag, not a quantity, so it reads as a switch rather
+    #: than as a box you can type any number into.  The spelling is the file's
     #: own ``1``/``0`` -- not the usual ``on``/``off`` of ``bool_true`` /
-    #: ``bool_false`` -- so leaving a switch alone leaves its line byte-identical.
+    #: ``bool_false`` -- so leaving the switch alone leaves its line byte-identical.
     _cp(
         "coupling.doDivCor", "doDivCor",
         vtype="bool", label="Divergence correction", default=True,
         bool_true="1", bool_false="0",
         help="1 projects the corrected particle velocity back onto a divergence-free field; requires phiIB in 0/phiIB and fvSolution.",
-        optional=True,
-    ),
-    _cp(
-        "coupling.Exdrag", "Exdrag",
-        vtype="bool", label="Explicit drag switch", default=False,
-        bool_true="1", bool_false="0",
-        optional=True,
-    ),
-    _cp(
-        "coupling.dragcorrcoe", "dragcorrcoe",
-        vtype="float", label="Drag correction coefficient", default=1.0, range=[0.0, 100.0],
         optional=True,
     ),
 ]
@@ -729,11 +722,6 @@ DEM_PARAMS: List[Param] = [
          default=0.2, partners=("dem.zmax",)),
     _var("dem.zmax", "zmax", vtype="float", unit="m", label="Region z max", default=0.4),
     _var(
-        "dem.rhop", "rhop", vtype="float", label="rhop variable",
-        default=1400, unit="kg/m3",
-        note="single_sphere uses set atom's density and does not use this variable.",
-    ),
-    _var(
         "dem.timestep", "timestep", vtype="float", unit="s", label="DEM time step",
         default=0.00001,
         help="DEM time step × couple_every = coupling period, which must be divisible by deltaT.",
@@ -800,9 +788,8 @@ DEM_PARAMS: List[Param] = [
         help="Atom type used by template-generated particles; must match the wall/pair parameters.",
     ),
     _ms(
-        "dem.ms.density", r"\s*density\s+constant\s+", r"\S+", r"\s*&.*",
-        vtype="string", label="Density source", default="${rhop}", readonly=True,
-        note="The template references the DEM rhop variable directly; to change the density, change dem.rhop.",
+        "dem.ms.density", r"\s*density\s+constant\s+", NUM, r"\s*&.*",
+        vtype="float", unit="kg/m3", label="Density", default=1010,
     ),
     _ms(
         "dem.ms.nspheres", r"\s*nspheres\s+", r"\d+", r"\s*&.*",

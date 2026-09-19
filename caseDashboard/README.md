@@ -1,6 +1,6 @@
 # caseDashboard · 算例参数仪表盘
 
-一个本地 Web 界面，用来查看和修改 `single_sphere` 算例里分散在多个文件中的关键参数，
+一个本地 Web 界面，用来查看和修改 `two_phase_sphere_settling` 算例里分散在多个文件中的关键参数，
 并在**写盘之前**暴露跨文件不一致。
 
 它只做一件事：**改参数**。不编译、不跑求解器、不调用 `blockMesh`，
@@ -111,8 +111,8 @@ python caseDashboard/run.py
 `/api/cases` 的扫描仍然只在仓库内做——列表给的是仓库里的算例，仓库外的靠浏览或手输到达。
 
 打开失败时**不会**关掉当前算例、也不会丢弃未写入的改动，菜单和输入框都留在原地好让你改。
-成功打开后算例名显示规范化的路径，所以粘贴 `D:\...\tutorial\single_sphere` 之后显示
-`tutorial/single_sphere`，而在仓库外则原样显示绝对路径。
+成功打开后算例名显示规范化的路径，所以粘贴 `D:\...\tutorial\two_phase_sphere_settling` 之后显示
+`tutorial/two_phase_sphere_settling`，而在仓库外则原样显示绝对路径。
 
 算例**不按名字匹配**，所以 `tutorial/multi_sphere_fish`（clump 颗粒、脚本名不同）也直接能开：
 参数表 94 项它全部识别得到，顶部提示里不会留任何「无法定位」。
@@ -209,7 +209,7 @@ python -m caseDashboard.server.e2e        # 60 项：HTTP 层（暂存一份算�
 - 改 `writeControl` 后分号之后的 `;//timeStep;//` 仍在
 - 改颗粒直径后同一行的 `density` / `vx` / `vy` / `vz` 未动
 - CRLF 行尾数量不变，且不产生裸 LF
-- 派生指标与 `docs/single_sphere_set.md` 的参考值一致
+- 派生指标与 `docs/two_phase_sphere_settling.md` 的参考值一致
 - 没有任何 schema 条目的 `file` 指向 `system/controlDict.foam`
 - 取消一个壁面只加注释前缀，且「取消 → 增加」逐字节回到原文
 - 改一个分解方向，`decomposeParDict` 里**恰好两行**变化（方向本身 + 子域总数），

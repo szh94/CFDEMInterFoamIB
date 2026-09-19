@@ -6,7 +6,8 @@ line, and the physical time is that step times the DEM time step the deck
 defines in ``variable timestep equal ...``.  So the time axis is computed from
 the two, never assumed.
 
-The figure goes to ``<case>/results/``.
+The figure goes to ``<case>/results/<case>_vz_vs_time.png``, the case name
+being that of the directory being read.
 """
 
 import re
@@ -148,7 +149,11 @@ def main() -> int:
     results.mkdir(exist_ok=True)
 
     first, last = dumps[0][0], dumps[-1][0]
-    out_path = results / "vz_vs_time.png"
+    # The case prefixes its own file: curves collected from several cases in one
+    # directory must not overwrite each other, and a plot out of context should
+    # still say which case it came from.  The name is read off the directory
+    # being plotted, never passed in, so renaming a case needs no edit here.
+    out_path = results / f"{case_dir.name}_vz_vs_time.png"
     draw(series, out_path, case_dir.name, "Particle z velocity", "v_z (m/s)")
 
     print(f"读取 {len(dumps)} 帧 dump（步 {first}..{last}），DEM 时间步 {dt:g} s")

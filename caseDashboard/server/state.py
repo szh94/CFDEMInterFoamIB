@@ -106,8 +106,8 @@ class Registry:
             state = self._states.get(key)
             if state is None:
                 # Two cases can share a directory name -- all the more easily now
-                # that a case can live anywhere, since `single_sphere` is the
-                # obvious thing to call a copy.  The slug names a directory on
+                # that a case can live anywhere, since copying one under the same
+                # name is the obvious thing to do.  The slug names a directory on
                 # disk, so it has to be unique, and a digest of the full path is
                 # the only part of it that is.  The name is kept for legibility.
                 digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]

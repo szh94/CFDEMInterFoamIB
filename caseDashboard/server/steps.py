@@ -345,12 +345,17 @@ def check_gif(case_dir: Path, facts: dict) -> Tuple[str, List[dict]]:
 
 
 def check_curve(case_dir: Path, facts: dict) -> Tuple[str, List[dict]]:
-    """Whether the DEM velocity curve has been drawn from the dumps."""
-    png = _file_size(case_dir / "results" / "vz_vs_time.png")
+    """Whether the DEM velocity curve has been drawn from the dumps.
+
+    ``plot_dem_curve.py`` prefixes the file with the case's own directory
+    name, so the name to look for is read off the case in hand, not fixed.
+    """
+    png_name = f"{case_dir.name}_vz_vs_time.png"
+    png = _file_size(case_dir / "results" / png_name)
     dumps = _glob(case_dir, "DEM/post/dump*.liggghts")
     rows = [
         _row(
-            "results/vz_vs_time.png",
+            f"results/{png_name}",
             "absent" if png is None else "present",
             _size(png) if png else "",
         ),

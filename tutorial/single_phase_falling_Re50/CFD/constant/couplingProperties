@@ -96,7 +96,7 @@ forceInterIBProps
     velFieldName "U";
     pressureFieldName "p";
     voidFieldName "voidfraction";
-    voidExp 2;
+    voidExp 1.5;
 }
 
 ArchimedesIBProps
@@ -149,11 +149,9 @@ engineIBProps
     xySplit 16;
 }
 
-Exdrag 0;
 
 Coe_V_local             0.6;
 Coe_V_global            1;
 
 doDivCor                0;
-dragcorrcoe             1;
 // ************************************************************************* //

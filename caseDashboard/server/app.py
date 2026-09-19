@@ -222,7 +222,7 @@ def encode_like(text: str, original: bytes) -> bytes:
 #: The case the parameter list was written for, as a repository-relative path.
 #: Recognition alone no longer singles it out -- every tutorial now matches the
 #: whole list -- so the reference case is named here and the UI opens on it.
-DEFAULT_CASE = "tutorial/single_sphere"
+DEFAULT_CASE = "tutorial/two_phase_sphere_settling"
 
 
 def discover_cases() -> List[dict]:

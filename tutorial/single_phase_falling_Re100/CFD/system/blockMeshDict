@@ -19,14 +19,14 @@ convertToMeters 1;
 // 宏定义
 // xco0 0.0;
 xco1 0;
-xco2 0.01;
+xco2 0.006;
 
 yco1 0.0;
-yco2 0.01;
+yco2 0.006;
 
 // zco0 0.0;
 zco1 0;
-zco2 0.03;
+zco2 0.02;
 
 vertices
 (
@@ -42,7 +42,7 @@ vertices
 
 blocks
 (
-    hex ( 0  4  5  1  2  6  7  3 ) (50 50 150) simpleGrading (1 1 1)
+    hex ( 0  4  5  1  2  6  7  3 ) (48 48 160) simpleGrading (1 1 1)
 );
 
 edges

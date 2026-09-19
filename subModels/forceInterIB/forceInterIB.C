@@ -118,11 +118,11 @@ forceInterIB::forceInterIB
 
     particleCloud_.checkCG(false);
 
-    if (voidExp_ < 1.0)
+    if (voidExp_ < 0.0)
     {
-        FatalError << "voidExp (" << voidExp_ << ") must be >= 1.0; the cell weight is"
-            << " 1 - pow(void, voidExp), and below 1 a cell that is nearly solid would"
-            << " count for less than its own fluid fraction" << abort(FatalError);
+        FatalError << "voidExp (" << voidExp_ << ") must be >= 0.0; the cell weight is"
+            << " 1 - pow(void, voidExp), and below 0 the exponent flips the map and a cell"
+            << " that is nearly solid gets a weight above 1" << abort(FatalError);
     }
 
     Info << "forceInterIB: void exponent = " << voidExp_ << endl;
@@ -144,9 +144,6 @@ void forceInterIB::setForce() const
     label cellI;
     vector drag;
     vector torque;
-
-    scalar Exdrag = readScalar(dict_.lookup("Exdrag"));
-    scalar dragcorrcoe = readScalar(dict_.lookup("dragcorrcoe"));
 
     volVectorField h = calcInterIBDragPerV(U_,p_);
     // *voidfraction_
@@ -182,20 +179,15 @@ void forceInterIB::setForce() const
                     scalar voidStep = pow(voidfraction_[cellI], voidExp_);
                     drag   += h[cellI]*h.mesh().V()[cellI]
                     * (1 - voidStep)
-                    * dragcorrcoe
                     ;
                     torque += (rc - positionCenter)^h[cellI]*h.mesh().V()[cellI]
                     * (1 - voidStep)
-                    * dragcorrcoe
                     ;
                     // 针对multisphere模型,防止重复计算
                     h[cellI] = vector(0.,0.,0.);
 
                 }
             }
-            if(Exdrag == 1)
-                Info << "\ndrag on particle " << index 
-                << " is " << drag << endl;
 
             // set force on particle
             if(twoDimensional_) drag /= depth_;
@@ -219,14 +211,8 @@ void forceInterIB::setForce() const
             // 这三个变量
             // Info << "drag =" << drag << endl;
 
-            // if(forceSubM(0).verbose()) 
-            if(Exdrag == 1) 
-                Info << "impForces = " 
-                <<impForces()[index][0]<<","
-                <<impForces()[index][1]<<","
-                <<impForces()[index][2] << endl;
-//            if(useTorque_) 
-            for(int j=0;j<3;j++) 
+//            if(useTorque_)
+            for(int j=0;j<3;j++)
                 particleCloud_.DEMTorques()[index][j] = torque[j];
             // 总是使用弯矩
         //}

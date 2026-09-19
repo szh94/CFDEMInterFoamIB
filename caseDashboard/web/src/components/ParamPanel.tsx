@@ -27,7 +27,7 @@ export function ParamPanel({ groupId }: Props) {
   const t = useT();
 
   /**
-   * The route a case did not take is noise on first read -- `single_sphere`
+   * The route a case did not take is noise on first read -- `two_phase_sphere_settling`
    * would otherwise open on 26 grey rows that cannot be edited -- so it starts
    * folded.  One flag for the whole panel, not one per card: the cards are
    * rendered inside a `byCard.map()`, where a hook would break the rules of

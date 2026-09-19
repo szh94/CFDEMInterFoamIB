@@ -11,16 +11,16 @@ A resolved CFD-DEM coupling solver for two-phase fluid interaction with particle
 For step-by-step installation and compilation in WSL, see the [Chinese WSL setup guide](docs/wslSetup_cn.md).
 
 ## Introduction to tutorial cases
-1. single_sphere  
+1. two_phase_sphere_settling  
 This case is used to show the interaction between particle and two-phase fluid in the settling process. Phenomena such as the cavity, splashing, and back-jet can be observed.  
 2. multi_sphere_fish  
 This case is an application of using the DEM clump. A clump consisting of overlapping sub-spheres is constructed to represent a fish-shaped object. Users should learn how to do multi-sphere modeling in LIGGGHTS.
 
 ## Animations of some cases:  
-### Sphere settling (corresponds to the tutorial case "single_sphere"):  
+### Sphere settling (corresponds to the tutorial case "two_phase_sphere_settling"):  
 <img src="docs/settling_withPhiCorrection.gif" width="40%">
 
-For the current simulation settings and run procedure, see the [single-sphere tutorial guide](docs/single_sphere_set.md).
+For the current simulation settings and run procedure, see the [two-phase sphere settling tutorial guide](docs/two_phase_sphere_settling.md).
 
 ### Fish settling (corresponds to the tutorial case "multi_sphere_fish"): 
 <img src="https://github.com/szh94/CFDEMInterFoamIB/releases/download/v1.0/fish.gif" width="40%">  

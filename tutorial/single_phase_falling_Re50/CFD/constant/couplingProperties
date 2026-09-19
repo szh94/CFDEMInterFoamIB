@@ -29,7 +29,7 @@ modelType none;
 
 useDDTvoidfraction b;
 
-couplingInterval 100;
+couplingInterval 20;
 
 depth 0;
 
@@ -96,7 +96,7 @@ forceInterIBProps
     velFieldName "U";
     pressureFieldName "p";
     voidFieldName "voidfraction";
-    voidExp 1;
+    voidExp 2;
 }
 
 ArchimedesIBProps
@@ -121,8 +121,8 @@ twoWayMPIProps
 IBProps
 {
     maxCellsPerParticle 10000;
-    alphaMin 0.30;
-    scaleUpVol 1.0;
+    alphaMin 0.3;
+    scaleUpVol 1;
 }
 
 bigParticleProps
@@ -151,9 +151,9 @@ engineIBProps
 
 Exdrag 0;
 
-Coe_V_local             0.9;
-Coe_V_global            1.0;
+Coe_V_local             0.6;
+Coe_V_global            1;
 
 doDivCor                0;
-dragcorrcoe             1.0;
+dragcorrcoe             1;
 // ************************************************************************* //

@@ -67,7 +67,7 @@ fix                 zwalls1 all wall/gran model hertz tangential history primiti
 # fix                 zwalls2 all wall/gran model hertz tangential history primitive type 1 zplane 0.03
 
 # cfd coupling
-fix                 cfd  all couple/cfd couple_every 100 mpi
+fix                 cfd  all couple/cfd couple_every 20 mpi
 fix                 cfd2 all couple/cfd/force
 
 #create single partciles

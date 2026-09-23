@@ -39,14 +39,33 @@ class Column:
     The default row is the triple's own ``valx`` / ``valy`` / ``valz``; a rule
     whose row is spread over several lines declares its columns explicitly (see
     ``Param.row_columns`` / ``Param.row_lines``).  ``vtype`` decides how the
-    token is read and written: ``text`` is copied through as a string, numbers
-    are parsed.  ``label``/``unit`` are what the panel prints above the column.
+    token is read and written: ``text`` and ``enum`` are copied through as
+    strings, numbers are parsed.  ``label``/``unit`` are what the panel prints
+    above the column.
     """
 
     name: str
     vtype: str = "float"
     label: str = ""
     unit: str = ""
+    #: The values an ``enum`` column offers.  A cell the file spells differently
+    #: is still shown and still written -- the panel appends it, as it does for
+    #: an ``enum`` param -- so the list is a convenience, never a filter.
+    options: Optional[Tuple[str, ...]] = None
+    #: A cell the row does not spell on its own line: the row *belongs to* the
+    #: nearest preceding line matching this regex, captured through a group
+    #: named after the column.  ``mesh.faces``'s patch name is one -- a face
+    #: line says its four corners and nothing else, and which patch it faces
+    #: is written once, above it.  The cell is shown for context and never
+    #: written: the line it came from is some other rule's to change.
+    context: Optional[str] = None
+    #: A CSS length the panel gives the column's boxes, in place of the width it
+    #: would pick for the cell's type.  A *fixed* one is what lines the boxes up
+    #: across the rows of a table whose cells are of no fixed size -- a patch
+    #: name, a short run of corner numbers -- and it is declared here because
+    #: the rule is what knows what its own column holds.  ``None`` -> the
+    #: panel's default width.
+    width: Optional[str] = None
 
 
 @dataclass
@@ -188,6 +207,19 @@ class Param:
     #: What a row starts at when the panel adds one (see ``resolved_to_api``).
     #: ``None`` -> the last row's own numbers, with text columns blank.
     row_seed: Optional[List[Any]] = None
+    #: Whether a row can be added to the end of this table, and the last one
+    #: taken off it.  False for a table whose rows are not self-contained: a
+    #: patch header introduces a parenthesised block of faces that the writer
+    #: can neither synthesize nor delete from the header alone, so those rows
+    #: are edited where they are and the panel offers no Add/Remove.  The
+    #: writer refuses a row count that changed either way -- the buttons are
+    #: the affordance, not the rail.
+    row_append: bool = True
+    #: How many of the table's rows the panel puts on one line.  A row of a few
+    #: narrow cells -- a patch header, a face -- leaves most of the card empty,
+    #: so several of them read better side by side than one per line; a row that
+    #: needs the width (a block's five columns) keeps a line to itself.
+    row_per_line: int = 1
     #: Free-form note rendered next to the field.
     note: str = ""
     #: Display order inside a group.

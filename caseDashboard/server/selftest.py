@@ -498,6 +498,253 @@ def _() -> None:
     eq(plan.files[BM].skipped, ["mesh.vertices"], "the vertex table was not skipped")
 
 
+@check("the block list reads as the block type, corners, divisions and grading")
+def _() -> None:
+    # `blocks` is the second table of blockMeshDict and the one that says how
+    # the mesh is *divided* -- which is what the cell-size and cells/diameter
+    # metrics are built from.  The corner numbers should go in and out exactly
+    # as the file spells them, double spaces included.
+    #
+    # The grading is two cells, not one: the descriptor is an `enum` the panel
+    # offers as a choice and its arguments are free text beside it.  Splitting
+    # them is what keeps `(1 1 1)` editable while the keyword is picked from a
+    # list -- and the split has to land between the word and its bracket, not
+    # inside the word.
+    #
+    # The case has one block, but the rule is a table like `vertices` -- the
+    # count is the answer, not an ambiguity -- and the row has its own five
+    # columns rather than a triple's three.
+    resolved, _files = read()
+    r = resolved["mesh.blocks"]
+    eq(r.status, "ok", "status")
+    eq(r.matches, 1, "row count")
+    eq(
+        r.value,
+        [["hex", "0  4  5  1  2  6  7  3", "50 50 100", "simpleGrading", "(1 1 1)"]],
+        "the block's five cells",
+    )
+    eq(
+        [c.vtype for c in r.param.columns],
+        ["text", "text", "text", "enum", "text"],
+        "the column types",
+    )
+    eq(
+        list(r.param.columns[3].options or ()),
+        ["simpleGrading", "edgeGrading"],
+        "the grading descriptors the panel offers",
+    )
+    # The scope has to have kept the reader inside `blocks (...)`; `edges` and
+    # `patches` hold lines that look like a block at a glance.
+    truthy(
+        r.rows[0].line - 1 in r.scopes[-1].body,
+        "the row came from outside the blocks block",
+    )
+
+
+@check("writing the block list back unchanged is a no-write")
+def _() -> None:
+    resolved, files = read()
+    plan = writer.plan_edits(
+        resolved, files, [writer.Edit("mesh.blocks", resolved["mesh.blocks"].value)]
+    )
+    eq(plan.changed_files, [], "echoing the block list back changed a file")
+    eq(plan.files[BM].skipped, ["mesh.blocks"], "the block list was not skipped")
+
+
+@check("changing one division count rewrites that cell and leaves the row its width")
+def _() -> None:
+    # The three counts live in one cell, so an edit is a whole-string
+    # replacement -- `50 50 100` -> `60 50 100` -- and nothing else on the line
+    # moves: not the corners, not the grading, not the row count.
+    resolved, files = read()
+    rows = [list(row) for row in resolved["mesh.blocks"].value]
+    rows[0][2] = "60 50 100"
+    plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.blocks", rows)])
+    eq(plan.errors, {}, "the division edit was rejected")
+    rendered = render_all(plan, files)[BM]
+    eq(
+        rendered,
+        files[BM].text.replace("(50 50 100) simpleGrading", "(60 50 100) simpleGrading", 1),
+        "the one cell did not change, or something else did",
+    )
+    eq(len(rendered.split("\n")), len(files[BM].text.split("\n")), "the line count changed")
+
+
+@check("a block added at the end becomes one line inside the list")
+def _() -> None:
+    # A second block is a line the file does not have, and it joins the list
+    # *before* `);` -- not after it.  It is spelled like the block above it: the
+    # template is the file's own last block line, with only the declared cells
+    # swapped, so the indent, the spacing and the line ending come from the file
+    # rather than from the writer.
+    resolved, files = read()
+    aside = resolved["mesh.blocks"].param
+    rows = [list(row) for row in resolved["mesh.blocks"].value] + [list(aside.row_seed)]
+    plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.blocks", rows)])
+    eq(plan.errors, {}, "appending a block was rejected")
+    rendered = render_all(plan, files)[BM]
+    eq(
+        rendered,
+        files[BM].text.replace(
+            "    hex ( 0  4  5  1  2  6  7  3 ) (50 50 100) simpleGrading (1 1 1)\r\n);\r\n",
+            "    hex ( 0  4  5  1  2  6  7  3 ) (50 50 100) simpleGrading (1 1 1)\r\n"
+            "    hex ( 0  4  5  1  2  6  7  3 ) (1 1 1) simpleGrading (1 1 1)\r\n"
+            ");\r\n",
+            1,
+        ),
+        "the appended block is not what a second block should look like",
+    )
+
+
+@check("the last block can be taken off the end of the list")
+def _() -> None:
+    resolved, files = read()
+    rows = [list(row) for row in resolved["mesh.blocks"].value][:-1]
+    plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.blocks", rows)])
+    eq(plan.errors, {}, "removing the last block was rejected")
+    rendered = render_all(plan, files)[BM]
+    eq(
+        rendered,
+        files[BM].text.replace(
+            "    hex ( 0  4  5  1  2  6  7  3 ) (50 50 100) simpleGrading (1 1 1)\r\n", "", 1
+        ),
+        "the block's line was not dropped whole",
+    )
+
+
+@check("the patch table reads one row per patch header")
+def _() -> None:
+    # A patch is a header line -- the type and the name -- and then a
+    # parenthesised block of faces.  The header is one table here and the faces
+    # another: a patch holds one face or twenty, and a table row is a line, so
+    # the faces cannot ride along with the header they belong to.
+    resolved, _files = read()
+    r = resolved["mesh.patches"]
+    eq(r.status, "ok", "status")
+    eq(
+        [row.values for row in r.rows],
+        [["wall", "x1"], ["wall", "walls"], ["wall", "z2"], ["wall", "x2"]],
+        "the patches, by type and name",
+    )
+    eq(
+        list(r.param.columns[0].options or ()),
+        ["patch", "wall", "empty", "symmetryPlane", "symmetry", "cyclic", "wedge",
+         "processor"],
+        "the patch types the panel offers",
+    )
+    # The rows are edited where they are: a header cannot be added or dropped
+    # without the block of faces under it, so the panel is offered no controls
+    # for either (see `Param.row_append`).
+    eq(r.param.row_append, False, "the patch table must not offer Add/Remove")
+    # A type and a name is a short row, so three of them share a line and the
+    # name's box is ten characters (see `Param.row_per_line`, `Column.width`).
+    eq(r.param.row_per_line, 3, "the patch rows are not packed")
+    eq(
+        reader.resolved_to_api(r)["columns"][1]["width"],
+        "calc(10ch + 1.25rem)",
+        "the patch name box is not ten characters",
+    )
+
+
+@check("a face row carries the patch it sits under, which it does not spell itself")
+def _() -> None:
+    # The face line says its four corner numbers and nothing else; which patch
+    # it faces is written once, above it.  The cell is therefore *inherited*
+    # (`Column.context`) rather than captured off the line -- and it has to
+    # follow the file's own order, so that the three faces of `walls` all take
+    # `walls` and not the `x1` above them.
+    resolved, _files = read()
+    r = resolved["mesh.faces"]
+    eq(r.status, "ok", "status")
+    eq(
+        [row.values for row in r.rows],
+        [
+            ["x1", "0 2 3 1"],
+            ["walls", "0 4 6 2"],
+            ["walls", "3 7 5 1"],
+            ["walls", "0 1 5 4"],
+            ["z2", "2 6 7 3"],
+            ["x2", "4 5 7 6"],
+        ],
+        "the faces, each under its own patch",
+    )
+    # Both boxes are declared fixed, which is what lines the two columns up
+    # down the table: a patch name is short, and a run of corner numbers is
+    # short, so neither wants a box that grows with what it holds.
+    eq(
+        [reader.resolved_to_api(r)["columns"][j]["width"] for j in range(2)],
+        ["6rem", "6rem"],
+        "the face boxes are not fixed",
+    )
+    eq(r.param.row_per_line, 3, "the face rows are not packed")
+    # The inherited cell is a reading, not a setting: it must not be written
+    # back onto the header line it came from.
+    rows = [list(row) for row in r.value]
+    rows[1][0] = "not-a-patch"
+    _, files = read()
+    plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.faces", rows)])
+    eq(plan.errors, {}, "the face edit was rejected")
+    eq(render_all(plan, files)[BM], files[BM].text, "an inherited cell was written back")
+
+
+@check("renaming a patch changes its header and nothing else")
+def _() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        target = copy_case(Path(tmp))
+        resolved, files = reader.read_case(target)
+        rows = [list(row) for row in resolved["mesh.patches"].value]
+        rows[0][1] = "inlet"
+        plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.patches", rows)])
+        eq(plan.errors, {}, "the rename was rejected")
+        rendered = render_all(plan, files)[BM]
+        eq(
+            rendered,
+            # The trailing space the header has after its name is outside the
+            # captured span, so it survives -- only the name itself moves.
+            files[BM].text.replace("    wall x1 \r\n", "    wall inlet \r\n", 1),
+            "the one name did not change, or something else did",
+        )
+        # The faces under it follow without a byte moving: the name they show
+        # is read off the header, so the two tables cannot drift apart.
+        writer.apply_plan(target, files, plan)
+        after, _ = reader.read_case(target)
+        eq(after["mesh.faces"].value[0][0], "inlet",
+           "the face under the renamed patch still shows the old name")
+
+
+@check("a face added at the end joins the last patch")
+def _() -> None:
+    # The only place this table can grow is the end, which here means the last
+    # patch's own block -- the appended line lands before its `)`, where a face
+    # of that patch belongs, not after the list.
+    resolved, files = read()
+    rows = [list(row) for row in resolved["mesh.faces"].value]
+    rows.append(list(resolved["mesh.faces"].param.row_seed or []))
+    plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.faces", rows)])
+    eq(plan.errors, {}, "appending a face was rejected")
+    rendered = render_all(plan, files)[BM]
+    eq(
+        rendered,
+        files[BM].text.replace(
+            "        (4 5 7 6)\r\n    )", "        (4 5 7 6)\r\n        (0 1 2 3)\r\n    )", 1
+        ),
+        "the appended face is not inside the patch it was added to",
+    )
+
+
+@check("the patch table refuses a row that was added or dropped")
+def _() -> None:
+    # The panel hides its Add/Remove for this table, but the rail is here: a
+    # header written without the block of faces under it -- or dropped and
+    # leaving one behind -- is a file blockMesh cannot read.
+    resolved, files = read()
+    rows = [list(row) for row in resolved["mesh.patches"].value]
+    for changed, what in ((rows + [["wall", "extra"]], "added"), (rows[:-1], "dropped")):
+        plan = writer.plan_edits(resolved, files, [writer.Edit("mesh.patches", changed)])
+        truthy("mesh.patches" in plan.errors, f"a {what} patch row was accepted")
+        eq(plan.changed_files, [], f"a {what} patch row reached the plan")
+
+
 @check("the multisphere case writes each value back byte-identically")
 def _() -> None:
     # The echo above runs on two_phase_sphere_settling, where the whole multisphere route is
@@ -717,11 +964,11 @@ def _() -> None:
         [
             [
                 "trailing particle -- the single-sphere case's own starting point",
-                0.003, 0.003, 0.018, 0.001, 1820.5, 0.0, 0.0, 0.0,
+                0.005, 0.005, 0.035, 0.00167, 1140.0, 0.0, 0.0, 0.0,
             ],
             [
                 "leading particle -- 0.002 m (2 diameters) below it",
-                0.003, 0.003, 0.016, 0.001, 1820.5, 0.0, 0.0, 0.0,
+                0.005, 0.005, 0.0316, 0.00167, 1140.0, 0.0, 0.0, 0.0,
             ],
         ],
         "the particles",
@@ -731,7 +978,7 @@ def _() -> None:
         eq(row.line, row.lines[0] + 1, "the reported line is not the anchor comment")
     eq(
         reader.resolved_to_api(r)["row_seed"],
-        ["", 0.003, 0.003, 0.016, 0.001, 1820.5, 0.0, 0.0, 0.0],
+        ["", 0.005, 0.005, 0.0316, 0.00167, 1140.0, 0.0, 0.0, 0.0],
         "a new particle should start where the last one is",
     )
 
@@ -750,11 +997,11 @@ def _() -> None:
     eq(
         rendered,
         files[DEM].text.replace(
-            "set                atom 2 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0\r\n",
-            "set                atom 2 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0\r\n"
+            "set                atom 2 diameter 0.00167 density 1140 vx 0 vy 0 vz 0\r\n",
+            "set                atom 2 diameter 0.00167 density 1140 vx 0 vy 0 vz 0\r\n"
             "# notes_p3: \r\n"
-            "create_atoms       1 single 0.003 0.003 0.016  units box\r\n"
-            "set                atom 3 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0\r\n",
+            "create_atoms       1 single 0.005 0.005 0.0316  units box\r\n"
+            "set                atom 3 diameter 0.00167 density 1140 vx 0 vy 0 vz 0\r\n",
             1,
         ),
         "the appended particle is not three lines with a fresh id",
@@ -773,8 +1020,8 @@ def _() -> None:
         rendered,
         files[DEM].text.replace(
             "# notes_p2: leading particle -- 0.002 m (2 diameters) below it\r\n"
-            "create_atoms       1 single 0.003 0.003 0.016  units box\r\n"
-            "set                atom 2 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0\r\n",
+            "create_atoms       1 single 0.005 0.005 0.0316  units box\r\n"
+            "set                atom 2 diameter 0.00167 density 1140 vx 0 vy 0 vz 0\r\n",
             "",
             1,
         ),
@@ -790,8 +1037,8 @@ def _() -> None:
     eq(
         r.value,
         [
-            "notes: create two partciles, in tandem along the fall direction (z):",
-            "the leading one sits two diameters below the trailing one, so its wake acts on it",
+            "create two particles, in tandem along the fall direction z: the leading "
+            "one sits two diameters below the trailing one, so its wake acts on it",
         ],
         "the zone notes",
     )
@@ -805,13 +1052,14 @@ def _() -> None:
 def _() -> None:
     resolved, files = reader.read_case(TWO_SPHERE)
     notes = list(resolved["dem.zone_notes"].value)
-    notes[1] = "the leading one sits two diameters below it"
+    notes[0] = "the leading one sits two diameters below it"
     plan = writer.plan_edits(resolved, files, [writer.Edit("dem.zone_notes", notes)])
     eq(plan.errors, {}, "the zone-note edit was rejected")
     eq(
         render_all(plan, files)[DEM],
         files[DEM].text.replace(
-            "# the leading one sits two diameters below the trailing one, so its wake acts on it",
+            "# create two particles, in tandem along the fall direction z: the leading "
+            "one sits two diameters below the trailing one, so its wake acts on it",
             "# the leading one sits two diameters below it",
             1,
         ),
@@ -830,14 +1078,18 @@ def _() -> None:
     eq(
         rendered,
         files[DEM].text.replace(
-            "# notes: create two partciles, in tandem along the fall direction (z):\r\n"
-            "# the leading one sits two diameters below the trailing one, so its wake acts on it\r\n",
+            "# create two particles, in tandem along the fall direction z: the leading "
+            "one sits two diameters below the trailing one, so its wake acts on it\r\n",
             "# one line\r\n# two lines\r\n",
             1,
         ),
         "the note block was not rewritten",
     )
-    eq(rendered.count("\r\n"), files[DEM].text.count("\r\n"), "the CRLF count changed")
+    eq(
+        rendered.count("\r\n"),
+        files[DEM].text.count("\r\n") + 1,
+        "the note block grew by one line and nothing else moved",
+    )
 
 
 @check("a blank line in the zone notes is refused")
@@ -1367,12 +1619,13 @@ def _() -> None:
 
 @check("nothing under server/ starts a process")
 def _() -> None:
-    # The dashboard's contract is that it reads and writes dictionaries and does
-    # nothing else.  The OS folder dialog used to be a deliberate, narrow
-    # exception to that; the folder browser is served out of the same handler as
-    # every other endpoint, so there is no exception left and this can be
-    # absolute.  A read-only WSL health probe once grew a subprocess here and had
-    # to be deleted -- this is what would catch it coming back.
+    # `server/` is the dashboard's read/write layer: it reads and writes
+    # dictionaries and starts nothing.  The OS folder dialog used to be a
+    # deliberate, narrow exception to that; the folder browser is served out of
+    # the same handler as every other endpoint, so there is no exception left
+    # and this can be absolute.  A read-only WSL health probe once grew a
+    # subprocess here and had to be deleted -- this is what would catch it
+    # coming back.
     launch = re.compile(
         r"\b(subprocess\.|os\.system|os\.popen|Popen\(|os\.startfile|ShellExecute)"
     )

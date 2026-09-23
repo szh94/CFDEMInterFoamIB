@@ -214,6 +214,10 @@ def _close(a: Optional[float], b: Optional[float], tol: float = 1e-9) -> bool:
 #: The DEM block's particle table, by the column names ``profiles`` gives it.
 PARTICLES = "dem.particles"
 
+#: ``blockMeshDict``'s block list -- the same kind of table, with its own
+#: column names (``vkind``/``vnodes``/``vcells``/``vgrade``).
+BLOCKS = "mesh.blocks"
+
 
 def _particles(ctx: Ctx) -> List[Dict[str, Any]]:
     """Every particle of the single-sphere route, one dict per row.
@@ -247,6 +251,34 @@ def _plabel(p: Dict[str, Any]) -> str:
     return f"particle {p['n']}"
 
 
+def _blocks(ctx: Ctx) -> List[Dict[str, Any]]:
+    """Every block of ``blockMeshDict``, one dict per row, keyed by column."""
+    rows = ctx.rows(BLOCKS)
+    if not rows:
+        return []
+    r = ctx.resolved.get(BLOCKS)
+    names = r.param.row_groups if r else []
+    out: List[Dict[str, Any]] = []
+    for i, row in enumerate(rows, start=1):
+        item = dict(zip(names, row))
+        item["n"] = i
+        out.append(item)
+    return out
+
+
+def _divisions(block: Dict[str, Any]) -> List[int]:
+    """A block's division counts as three integers, or ``[]``.
+
+    The cell is the file's own text -- ``"50 50 100"`` -- because the panel
+    writes the whole string back verbatim; the metrics are the one place that
+    has to read numbers out of it.
+    """
+    try:
+        return [int(t) for t in str(block.get("vcells") or "").split()]
+    except ValueError:
+        return []
+
+
 # ---------------------------------------------------------------- metrics
 
 
@@ -256,7 +288,12 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
     x1, x2 = ctx.num("mesh.xco1"), ctx.num("mesh.xco2")
     y1, y2 = ctx.num("mesh.yco1"), ctx.num("mesh.yco2")
     z1, z2 = ctx.num("mesh.zco1"), ctx.num("mesh.zco2")
-    cells = ctx.triple("mesh.cells")
+    # One block is the case here, and a mesh split into several is judged by
+    # its first: the cell size, the anisotropy and the cells/diameter verdict
+    # are read off block 1, and the message on the cell-size card says so.
+    blocks = _blocks(ctx)
+    counts = [_divisions(b) for b in blocks]
+    cells = counts[0] if counts and len(counts[0]) == 3 else None
     particles = _particles(ctx)
     # The diameter the *worst* particle has: cells/diameter is a resolution
     # verdict, so the smallest particle is the one it has to be judged by.
@@ -293,8 +330,10 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
         detail=" · ".join(
             f"Δ{axis} {_fmt(mm(delta), 4)}" for axis, delta in zip("xyz", (dx, dy, dz))
         ) + " mm",
+        message="" if len(blocks) == 1 else
+        f"From block 1 of {len(blocks)}; the other blocks are not measured",
         formula="(xco2-xco1)/nx, (yco2-yco1)/ny, (zco2-zco1)/nz",
-        sources=["mesh.cells"],
+        sources=["mesh.blocks"],
     ))
 
     dims = [d for d in (dx, dy, dz) if d]
@@ -308,12 +347,16 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
             message="" if is_uniform else
             "Cell sizes differ by direction; the interface will be resolved anisotropically",
             formula="max(Δx,Δy,Δz)/min(Δx,Δy,Δz)",
-            sources=["mesh.cells"],
+            sources=["mesh.blocks"],
         ))
 
+    # Every block's own cell count: a mesh of several blocks has more cells
+    # than the first one implies, and the run's cost follows the total.
     metrics.append(metric(
-        "mesh.ncells", "Total cells", nx * ny * nz, "cells", formula="nx·ny·nz",
-        sources=["mesh.cells"],
+        "mesh.ncells", "Total cells",
+        sum(c[0] * c[1] * c[2] for c in counts if len(c) == 3), "cells",
+        formula="nx·ny·nz" if len(blocks) == 1 else "Σ nx·ny·nz",
+        sources=["mesh.blocks"],
     ))
 
     if diameter and dx:
@@ -333,7 +376,7 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
             "The particle diameter spans too few cells; immersed-boundary forces "
             "will be dominated by discretisation noise" + suffix,
             formula="diameter / Δx",
-            sources=["dem.particles", "mesh.cells", "mesh.xco1", "mesh.xco2"],
+            sources=["dem.particles", "mesh.blocks", "mesh.xco1", "mesh.xco2"],
         ))
 
         # The span is per particle -- each sits somewhere of its own -- and the
@@ -382,7 +425,7 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
                     for where, names in placement.items()
                 ),
                 formula="floor((c+r-lo)/Δ) - floor((c-r-lo)/Δ) + 1",
-                sources=["dem.particles", "mesh.cells"],
+                sources=["dem.particles", "mesh.blocks"],
             ))
 
     # --- coupling period --------------------------------------------------
@@ -455,7 +498,13 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
                 sources=["run.writeInterval", "run.endTime", "run.writeControl"],
             ))
 
-    # --- water level ------------------------------------------------------
+    # --- water level, and the particles against it ------------------------
+    # One card for the two: the depth and where the particles sit against it
+    # are the same question about the initial state -- a level on its own does
+    # not say whether the run starts with the particles already wet, and a
+    # placement is only legible beside the level it was measured to.  They read
+    # off the same two numbers, so they are one answer.
+    #
     # The depth is the box's own height, not its distance above the domain
     # floor: `zmin` is editable, so a box that floats above `zco1` still holds
     # exactly `zmax - zmin` of water.  An absent `zmin` reads as 0 rather than
@@ -463,17 +512,6 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
     # case that writes only the upper corner.
     sf_zmax = ctx.num("mesh.sf.zmax")
     sf_zmin = ctx.num("mesh.sf.zmin")
-    if sf_zmax is not None and sf_zmin is not None:
-        depth = sf_zmax - sf_zmin
-        metrics.append(metric(
-            "mesh.water_depth", "Initial water depth", depth, "m",
-            status=OK if depth > 0 else WARN,
-            message="" if depth > 0 else
-            "The initial water box has no height (zmax is not above zmin); the "
-            "initial field will have no water",
-            formula="setFields.zmax - setFields.zmin",
-            sources=["mesh.sf.zmax", "mesh.sf.zmin"],
-        ))
 
     # --- particle placement ----------------------------------------------
     wet: List[Dict[str, Any]] = []
@@ -482,21 +520,42 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
         if z is not None:
             p["z"] = z
             wet.append(p)
-    if wet and sf_zmax is not None:
+
+    if sf_zmax is not None and sf_zmin is not None:
+        depth = sf_zmax - sf_zmin
         high = [p for p in wet if p["z"] >= sf_zmax]
-        metrics.append(metric(
-            "dem.submerged", "Initial state",
-            "below the water surface" if not high else
-            ("above the water surface" if len(high) == len(wet)
-             else "partly above the water surface"),
-            status=OK if not high else INFO,
-            message="" if not high else "; ".join(
+        state = (
+            "below the water surface" if not high
+            else ("above the water surface" if len(high) == len(wet)
+                  else "partly above the water surface")
+        ) if wet else ""
+        warnings = []
+        if depth <= 0:
+            warnings.append(
+                "The initial water box has no height (zmax is not above zmin); "
+                "the initial field will have no water"
+            )
+        if high:
+            warnings.append("; ".join(
                 f"{_plabel(p)} centre z={_fmt(p['z'], 4)} is above the initial water "
                 f"surface z={_fmt(sf_zmax, 4)}"
                 for p in high
-            ) + "; it will fall through air into the water",
-            formula="pos.z < setFields.zmax",
-            sources=["dem.particles", "mesh.sf.zmax"],
+            ) + "; it will fall through air into the water")
+        metrics.append(metric(
+            "mesh.water_depth", "Initial water depth and particle state",
+            depth, "m",
+            status=WARN if depth <= 0 else (INFO if high else OK),
+            message=" ".join(warnings),
+            # The state is the half that does not fit the header slot, and a
+            # metric that has a detail line prints nothing but its name up
+            # there -- so the depth comes down here with it.  A case that
+            # creates no particles has no state to report and is left as it
+            # was: the depth alone, right-aligned against the name.
+            detail=f"{_fmt(depth, 4)} m · {state}" if state else "",
+            formula="setFields.zmax - setFields.zmin" + (
+                " · pos.z < setFields.zmax" if wet else ""
+            ),
+            sources=["mesh.sf.zmax", "mesh.sf.zmin"] + (["dem.particles"] if wet else []),
         ))
 
     # --- parallel layout --------------------------------------------------

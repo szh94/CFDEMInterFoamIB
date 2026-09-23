@@ -80,6 +80,8 @@ const ZH_UI: Record<string, string> = {
   "{n} files": "{n} 个文件",
 
   // -- group hints --
+  "Geometry inspection: the corners, boundary faces and particles the rules read, drawn from the same effective values the metrics compute with. A face is coloured by its patch and carries an arrow along the normal its own corner order gives, so a face wound the wrong way points into the box. The same picture sits small in the sidebar, where it stays put while the tabs move.":
+    "几何检视：规则读到的顶点、边界面与颗粒，用与派生指标完全相同的有效值绘制。每个面按其 patch 着色，并沿自身节点顺序给出的法向画一支箭头，因此绕向写反的面会指向盒子内部。同一张图在侧边栏以小图呈现，切换标签时始终留在原处。",
   "Fluid side: mesh size, physical properties (viscosity, density, surface tension, turbulence and gravity), initial water level, parallel decomposition and solver controls. The same quantity is defined in several files, and the panel on the right flags mismatches as you type.":
     "流体侧：网格尺寸、物理参数（黏度、密度、表面张力、湍流与重力）、初始水位、并行分解与求解控制。同一个量在多个文件中重复定义，右侧会实时指出不一致。",
   "Particle side: LIGGGHTS particle properties, the DEM region and the coupling frequency. Wall coordinates get their own card and must match the fluid domain boundary face by face.":
@@ -113,6 +115,15 @@ const ZH_UI: Record<string, string> = {
   "Values recompute as you edit, so cross-file mismatches surface before anything is written.":
     "数值随编辑实时重算，写入前即可发现跨文件不一致。",
   "Computing…": "正在计算…",
+  "Mesh geometry": "网格几何",
+  "Geometry preview": "几何预览",
+  "{n} vertices · {m} faces": "{n} 个顶点 · {m} 个面",
+  "Drag to rotate": "拖动旋转",
+  "Reset the view": "恢复默认视角",
+  "No vertices or faces were read from the mesh card.": "网格卡片里没读到顶点或面。",
+  "Fold the preview": "折叠预览",
+  "Unfold the preview": "展开预览",
+  "Initial water": "初始水盒",
   "Metrics": "指标",
   "All": "全部",
   "Issues only": "仅问题",
@@ -189,10 +200,19 @@ const ZH_UI: Record<string, string> = {
   "Remove last": "删除末端",
   "Add a row at the end of the table": "在表格末尾新增一行",
   "Take the last row off the end of the table": "删除表格末尾的一行",
-  // -- table column headings (a particle's note and its eight numbers) --
+  // -- table column headings (a particle's note and its eight numbers, a
+  //    block's type, corners, divisions and grading) --
   "note": "备注",
   "diameter": "直径",
   "density": "密度",
+  "type": "类型",
+  "nodes": "节点",
+  "cells": "单元数",
+  "grading": "划分方式",
+  "grading parameters": "划分参数",
+  "patch type": "面类型",
+  "patch name": "面名称",
+  "patch": "所属面",
   "{n} marker points": "{n} 个标记点",
   "The macros the mesh's corners are built from; unfold to list them":
     "网格角点由这些宏搭建，展开后按宏名罗列",
@@ -271,7 +291,9 @@ const ZH_PARAM: Record<string, string> = {
   "mesh.yco2": "域 y 最大值",
   "mesh.zco2": "域 z 最大值",
   "mesh.vertices": "顶点",
-  "mesh.cells": "单元数",
+  "mesh.blocks": "几何块",
+  "mesh.patches": "边界面",
+  "mesh.faces": "面清单",
   "mesh.sf.xmin": "初始水盒 x 下/上界",
   "mesh.sf.ymin": "初始水盒 y 下/上界",
   "mesh.sf.zmin": "初始水盒 z 下/上界",
@@ -388,8 +410,7 @@ const ZH_METRIC: Record<string, string> = {
   "coupling.dem_steps_per_period": "每耦合周期的 DEM 步数",
   "run.cfd_steps": "CFD 总步数",
   "run.frames": "输出帧总数",
-  "mesh.water_depth": "初始水深",
-  "dem.submerged": "初始状态",
+  "mesh.water_depth": "初始水深与粒子状态",
   "parallel.subdomains": "并行进程数",
 };
 
@@ -441,6 +462,8 @@ const ZH_STEP: Record<string, string> = {
 
 /** Group (tab) names, keyed by group id. */
 const ZH_GROUP: Record<string, string> = {
+  // The dashboard's own page, not one the backend sends.
+  "geometry": "几何检视",
   "fluid": "流体",
   "particle": "粒子",
   "coupling": "耦合",

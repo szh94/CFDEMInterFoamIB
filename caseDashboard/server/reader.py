@@ -320,18 +320,34 @@ def _read_cells(
     values: List[object],
     spans: List[Span],
     sources: List[Optional[str]],
+    context: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """Append one line's columns to a row.  Returns a reason, or ``None``.
 
-    A ``text`` column is copied through as the file spells it (a note is not a
-    number and has no macro to resolve); every other column is a number, or a
-    ``$macro`` the file defines.  Neither is guessed at: an unreadable token
-    makes the whole rule unresolved, naming it.
+    A ``text`` column and an ``enum`` one are both copied through as the file
+    spells them (a note is not a number and has no macro to resolve, and an
+    ``enum``'s list is a convenience rather than a filter); every other column
+    is a number, or a ``$macro`` the file defines.  Neither is guessed at: an
+    unreadable token makes the whole rule unresolved, naming it.
+
+    A ``context`` column is not on the line at all (see ``Column.context``): it
+    takes the value resolved for the block the row sits in, and a row with no
+    such block above it is unresolved rather than silently blank.
     """
     for col in cols:
+        if col.context is not None:
+            found = (context or {}).get(col.name)
+            if found is None:
+                return f"the {col.label or col.name} this row belongs to is not above it"
+            # Zero-width: the cell is never written (see ``writer._plan_rows``),
+            # so the span only has to keep the value lists aligned.
+            values.append(found)
+            spans.append(Span(idx, 0, 0))
+            sources.append(None)
+            continue
         token = m.group(col.name)
         span = m.span(col.name)
-        if col.vtype == "text":
+        if col.vtype in ("text", "enum"):
             values.append(token)
             sources.append(None)
         elif token.startswith("$"):
@@ -354,6 +370,42 @@ def _read_cells(
     return None
 
 
+def _context_values(
+    param: Param,
+    ft: FileText,
+    hits: List[Tuple[int, re.Match]],
+    levels: List[ScopeLevel],
+) -> Dict[int, Dict[str, str]]:
+    """What each row inherits from the block it sits in, by the row's line.
+
+    One pass over the scope, keeping the last match of each ``context`` column
+    seen so far: a row takes whatever was in force on the line before it, which
+    is what makes a list of faces group under the headers above them in the
+    order the file wrote them.  The order matters at a line that is *both* a
+    row and a header -- the row takes the block it is in, not itself, so the
+    value is recorded before the line's own match is.
+
+    A file that leaves the row before any header has nothing to record for it,
+    and ``_read_cells`` reports the row unresolved rather than guessing.
+    """
+    cols = [col for col in param.columns if col.context is not None]
+    if not cols:
+        return {}
+    patterns = [(col, re.compile(col.context)) for col in cols]
+    anchors = {idx for idx, _ in hits}
+    body = levels[-1].body if levels else list(range(len(ft.contents)))
+    out: Dict[int, Dict[str, str]] = {}
+    latest: Dict[str, str] = {}
+    for i in body:
+        if i in anchors:
+            out[i] = dict(latest)
+        for col, pattern in patterns:
+            m = pattern.search(ft.contents[i])
+            if m:
+                latest[col.name] = m.group(col.name)
+    return out
+
+
 def _resolve_repeats(
     param: Param, ft: FileText, hits: List[Tuple[int, re.Match]], levels: List[ScopeLevel]
 ) -> Resolved:
@@ -373,17 +425,25 @@ def _resolve_repeats(
     missing its companion is reported rather than quietly borrowing the next
     particle's.  Every line of the row is spanned, so a removal takes all of
     them (see ``writer._plan_rows``).
+
+    A column may also be inherited from a line *above* the row (``Column.
+    context``): a face line says its four corners and leaves the patch it faces
+    to the header written once over it.  Those values are collected in one pass
+    over the scope before the rows are built, so which block a row belongs to
+    is decided by the file's own order rather than by a second search per row.
     """
     scalars = file_scalars(ft.contents)
     specs = param.row_specs
     compiled = [(re.compile(text), cols) for text, cols in specs[1:]]
+    context = _context_values(param, ft, hits, levels)
     rows: List[Row] = []
     for pos, (idx, m) in enumerate(hits):
         values: List[object] = []
         spans: List[Span] = []
         sources: List[Optional[str]] = []
         lines = [idx]
-        reason = _read_cells(param, m, specs[0][1], idx, scalars, values, spans, sources)
+        reason = _read_cells(param, m, specs[0][1], idx, scalars, values, spans, sources,
+                             context.get(idx))
         if reason:
             return Resolved(param, None, "unresolved", [], idx + 1, len(hits),
                             f"Line {idx + 1}: {reason}", scopes=levels)
@@ -407,7 +467,8 @@ def _resolve_repeats(
                     scopes=levels,
                 )
             j, mm = found
-            reason = _read_cells(param, mm, cols, j, scalars, values, spans, sources)
+            reason = _read_cells(param, mm, cols, j, scalars, values, spans, sources,
+                                 context.get(idx))
             if reason:
                 return Resolved(param, None, "unresolved", [], j + 1, len(hits),
                                 f"Line {j + 1}: {reason}", scopes=levels)
@@ -678,9 +739,9 @@ def _row_seed(p: Param, r: Resolved) -> Optional[list]:
 
     ``Param.row_seed`` when the rule spells one out (the vertex table, which
     has always started a new corner at the origin); otherwise the last row's
-    own values, with the text columns blank -- a new particle starts where the
-    previous one did, since that is the only placement the file knows about,
-    and a new note starts empty.
+    own values, with the string columns blank -- a new particle starts where
+    the previous one did, since that is the only placement the file knows
+    about, and a new note starts empty.
     """
     if not p.repeats:
         return None
@@ -688,12 +749,12 @@ def _row_seed(p: Param, r: Resolved) -> Optional[list]:
         return list(p.row_seed)
     if not r.rows:
         return [
-            "" if col.vtype == "text" else 0
+            "" if col.vtype in ("text", "enum") else 0
             for col in p.columns
         ]
     last = r.rows[-1].values
     return [
-        "" if getattr(col, "vtype", "float") == "text" else value
+        "" if getattr(col, "vtype", "float") in ("text", "enum") else value
         for col, value in zip(p.columns, last)
     ]
 
@@ -751,11 +812,30 @@ def resolved_to_api(r: Resolved) -> dict:
         # the vertex table and the particle table share one renderer.  Empty
         # for everything that is not a table.
         "columns": [
-            {"name": col.name, "type": col.vtype, "label": col.label, "unit": col.unit}
+            {
+                "name": col.name, "type": col.vtype, "label": col.label,
+                "unit": col.unit,
+                "options": list(col.options) if col.options else None,
+                # Shown for context, never written (see ``Column.context``).
+                "derived": col.context is not None,
+                # The box's width, when the rule fixes one (see
+                # ``Column.width``); ``None`` -> the panel's own default.
+                "width": col.width,
+            }
             for col in p.columns
         ],
+        # Whether the panel draws one box per column or the triple's own
+        # x/y/z.  It is the rule's declaration that decides, not the count:
+        # the vertex table's three columns *are* the axes, and a two-column
+        # table of its own (the patch headers) is not a triple.
+        "per_column": p.row_columns is not None,
         # The row the Add button writes (see ``_row_seed``).
         "row_seed": _row_seed(p, r),
+        # Whether rows may be added or taken off the end at all (see
+        # ``Param.row_append``).
+        "row_append": p.row_append,
+        # How many of the table's rows share one line (see ``Param.row_per_line``).
+        "row_per_line": p.row_per_line,
         "toggle": p.toggle,
         "enabled": r.enabled,
         "reason": r.reason,

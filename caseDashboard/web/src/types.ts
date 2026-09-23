@@ -60,6 +60,17 @@ export interface ParamColumn {
   /** What the panel prints above the column; also the i18n key. */
   label: string;
   unit: string;
+  /** For an `enum` column: the choices its box offers. A cell the file spells
+      differently is shown as itself -- the list is a convenience, not a
+      filter. */
+  options: string[] | null;
+  /** The cell is not on the row's own line: it comes from the block the row
+      sits in (`mesh.faces`'s patch name), so it is shown for context and
+      never edited. */
+  derived: boolean;
+  /** A CSS length the rule fixes the box at, so the column's boxes line up
+      down the table; `null` -> the panel's own width for the cell's type. */
+  width: string | null;
 }
 
 export interface SourceRef {
@@ -118,6 +129,10 @@ export interface Param {
       matched line, rather than one triple. The panel renders one row of boxes
       per line instead of a single row. */
   repeats: boolean;
+  /** The rule declared its own columns, so the panel draws one box per column
+      rather than the triple's own x/y/z. The vertex table's three columns
+      *are* the axes; a two-column table of its own is not a triple. */
+  per_column: boolean;
   /** For a `repeats` param, the parameter each component's token came from --
       `macros[row][axis]`, or `null` where the file spells a literal number.
       This is what carries a pending edit of a source (a domain extent) into a
@@ -132,6 +147,14 @@ export interface Param {
       vertex table starts a corner at the origin; the particle table starts one
       where the last particle is. */
   row_seed: TableRow | null;
+  /** Whether rows may be added to the end of the table and taken off it. False
+      where a row is not self-contained -- a patch header introduces a block of
+      faces the writer cannot build from the header alone -- and the panel then
+      offers no Add/Remove. */
+  row_append: boolean;
+  /** How many of the table's rows share one line. A row of a few narrow cells
+      leaves most of the card empty, so several read better side by side. */
+  row_per_line: number;
   /** The line can be commented out to switch it off (see `enabled`). */
   toggle: boolean;
   /** For a toggle param: whether its line is live. Always true otherwise. */
@@ -157,8 +180,11 @@ export interface Group {
   label: string;
   blurb: string;
   /** What the tab holds: the ordinary case is fields, `scripts` is the
-      `step*.sh` pipeline, rendered from `/api/steps` rather than the payload. */
-  kind: "params" | "scripts";
+      `step*.sh` pipeline, rendered from `/api/steps` rather than the payload,
+      and `geometry` is the dashboard's own picture of the mesh -- the one tab
+      the backend does not send (see `App`'s `GEOMETRY`), so it is typed here
+      rather than left out. */
+  kind: "params" | "scripts" | "geometry";
   param_ids: string[];
 }
 

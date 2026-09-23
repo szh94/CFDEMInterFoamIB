@@ -132,7 +132,7 @@ def run() -> None:
 
 def _read(api: Client) -> None:
     payload = api.get(f"/api/case?path={CASE_REL}")
-    t("every parameter resolved", len(payload["params"]) == 144, len(payload["params"]))
+    t("every parameter resolved", len(payload["params"]) == 146, len(payload["params"]))
     # The `vertices` rule is the one that is a *table* rather than a value, so
     # what is worth pinning over HTTP is the three things that make it one: the
     # flag the panel branches on, the coordinates themselves -- resolved through

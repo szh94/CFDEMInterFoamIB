@@ -7,13 +7,31 @@ import { TopBar } from "./components/TopBar";
 import { ParamPanel } from "./components/ParamPanel";
 import { StepsPanel } from "./components/StepsPanel";
 import { DerivedPanel } from "./components/DerivedPanel";
+import { GeometryView } from "./components/GeometryView";
 import { DiffDrawer } from "./components/DiffDrawer";
 import { FileEditor } from "./components/FileEditor";
 import { Toasts } from "./components/Toast";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { IconChevron, IconSpinner } from "./components/Icons";
+import type { Group } from "./types";
+
+/**
+ * The geometry page is the dashboard's own, not the case's: it holds no
+ * parameter and is put in front of the backend's groups here, so a case's own
+ * tab list is never touched by it.  Written in the same shape a group has, so
+ * the tab bar needs to know nothing about the difference.
+ */
+const GEOMETRY: Group = {
+  id: "geometry",
+  label: "Geometry inspection",
+  blurb: "",
+  kind: "geometry",
+  param_ids: [],
+};
 
 const GROUP_HINT: Record<string, string> = {
+  geometry:
+    "Geometry inspection: the corners, boundary faces and particles the rules read, drawn from the same effective values the metrics compute with. A face is coloured by its patch and carries an arrow along the normal its own corner order gives, so a face wound the wrong way points into the box. The same picture sits small in the sidebar, where it stays put while the tabs move.",
   fluid:
     "Fluid side: mesh size, physical properties (viscosity, density, surface tension, turbulence and gravity), initial water level, parallel decomposition and solver controls. The same quantity is defined in several files, and the panel on the right flags mismatches as you type.",
   particle:
@@ -35,7 +53,9 @@ export default function App() {
   const focusParam = useStore((s) => s.focusParam);
   const focusSeq = useStore((s) => s.focusSeq);
   const loadScripts = useStore((s) => s.loadScripts);
-  const [active, setActive] = useState("fluid");
+  // The picture first: a case opens on what it is, and the field pages are one
+  // click behind it.
+  const [active, setActive] = useState(GEOMETRY.id);
   const [sidebar, setSidebar] = useState(true);
   const t = useT();
 
@@ -44,13 +64,19 @@ export default function App() {
   }, [boot]);
 
   const groups = payload?.groups ?? [];
-  const group = groups.find((g) => g.id === active);
+  /** What the tab bar shows: our geometry page, then whatever the case sent. */
+  const tabs = payload ? [GEOMETRY, ...groups] : [];
+  const group = tabs.find((g) => g.id === active);
 
   useEffect(() => {
-    if (groups.length && !groups.some((g) => g.id === active)) {
+    // Against `tabs`, not `groups`: the geometry page is ours, so a case whose
+    // group list changes under it must not throw the user back to the fluid
+    // page.  A tab that really went away still falls back to the first of the
+    // case's own, never to the geometry page, which is always there.
+    if (groups.length && !tabs.some((g) => g.id === active)) {
       setActive(groups[0].id);
     }
-  }, [groups, active]);
+  }, [groups, tabs, active]);
 
   /**
    * The script page answers from the directory, not from the payload, so it has
@@ -82,7 +108,7 @@ export default function App() {
       <TopBar />
 
       {payload && (
-        <TabBar groups={groups} active={active} onChange={setActive} />
+        <TabBar groups={tabs} active={active} onChange={setActive} />
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -95,7 +121,12 @@ export default function App() {
               <p className="text-[11.5px] leading-relaxed text-ink-3">
                 {t.t(GROUP_HINT[active] ?? "")}
               </p>
-              {group?.kind === "scripts" ? (
+              {group?.kind === "geometry" ? (
+                // The page is the card: full width of the column, and taller
+                // than the sidebar's copy of it, which is the point of having
+                // the two.
+                <GeometryView stage />
+              ) : group?.kind === "scripts" ? (
                 <StepsPanel />
               ) : (
                 <ParamPanel groupId={active} />
@@ -124,7 +155,13 @@ export default function App() {
           </button>
 
           {sidebar ? (
-            <DerivedPanel />
+            // Two cards, not a card within one: the geometry picture is its own
+            // answer about the case, so it stands beside the metrics panel
+            // rather than under its heading.
+            <div className="flex h-full flex-col gap-2 p-2">
+              <GeometryView />
+              <DerivedPanel />
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center">
               <span className="whitespace-nowrap text-[10.5px] text-ink-4 [writing-mode:vertical-rl]">

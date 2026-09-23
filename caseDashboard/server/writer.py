@@ -111,7 +111,7 @@ def format_row(param, value) -> List[str]:
         raise WriteError(f"Expected {len(cols)} values, got {value!r}")
     out: List[str] = []
     for col, cell in zip(cols, value):
-        if col.vtype == "text":
+        if col.vtype in ("text", "enum"):
             out.append(str(cell))
         elif col.vtype == "int":
             out.append(str(int(cell)))
@@ -315,6 +315,17 @@ def _plan_rows(
     if not isinstance(new_rows, (list, tuple)):
         errors[edit.param_id] = f"Expected a list of rows, got {new_rows!r}"
         return
+    # A row of this table is not the whole of what the file keeps for it -- a
+    # patch header introduces a block of faces the writer cannot build or drop
+    # from the header alone -- so the count has to come back unchanged.  The
+    # panel hides its Add/Remove for such a rule (``Param.row_append``); this
+    # is what holds when a client ignores that.
+    if not param.row_append and len(new_rows) != len(r.rows):
+        errors[edit.param_id] = (
+            f"This table's rows are written where they are: expected {len(r.rows)} "
+            f"of them, got {len(new_rows)}"
+        )
+        return
 
     kept = min(len(r.rows), len(new_rows))
     # Validated in full before a single replacement is recorded: a rejected
@@ -326,8 +337,10 @@ def _plan_rows(
         except WriteError as exc:
             errors[edit.param_id] = str(exc)
             return
-        for span, text, old in zip(row.spans, texts, row.values):
-            if _cell_equal(text, old):
+        for col, span, text, old in zip(param.columns, row.spans, texts, row.values):
+            # An inherited cell lives on another rule's line (``Column.
+            # context``); echoing it back must not rewrite that line.
+            if col.context is not None or _cell_equal(text, old):
                 continue
             pending.append((span.line, span.col_start, span.col_end, text))
 
@@ -379,16 +392,24 @@ def _appended_row(ft: FileText, r: Resolved, texts: List[str], index: int) -> Li
     lines it is added to (the same instinct as ``_indent_of``), and the number
     is the row's position, which is what the case wrote it to mean.
 
-    A row of several lines (``Param.row_lines``) is built the same way, one
-    line at a time, off the *last row's corresponding line*: every column's
-    own span on that template is replaced and everything else -- the keyword,
-    the spacing, the trailing comment -- is copied verbatim.  A line whose
+    A row that declared its own columns (``Param.row_columns``) is built the
+    same way, one line at a time, off the *last row's corresponding line*:
+    every column's own span on that template is replaced and everything else --
+    the keyword, the spacing, the trailing comment -- is copied verbatim.  That
+    covers a row spread over several lines (``Param.row_lines``) and a one-line
+    row of several columns alike (the block list's four cells).  A line whose
     regex captures ``valid`` gets the row's 1-based ordinal written there,
     which is what renumbers ``#notes_pN`` and ``set atom N`` after an add.
     """
     param = r.param
     specs = param.row_specs
-    if len(specs) == 1:
+    # The one-line shortcut is the *vertex* table's: its value is a bare triple,
+    # so a new line is `(x y z)` plus the file's own `//N` tail.  A rule that
+    # declared its own columns is not that shape even when it fits on one line
+    # -- the block list's `hex ( ... ) ( ... ) simpleGrading ( ... )` -- and
+    # goes through the general branch below, which copies the last row's line
+    # and swaps each declared column's span in place.
+    if param.row_columns is None and len(specs) == 1:
         last = ft.contents[r.rows[-1].spans[0].line]
         body = f"({texts[0]} {texts[1]} {texts[2]})"
         tail = _VERTEX_INDEX.search(last)
@@ -404,9 +425,15 @@ def _appended_row(ft: FileText, r: Resolved, texts: List[str], index: int) -> Li
         m = re.compile(pattern).search(template)
         repls: List[Tuple[int, int, str]] = []
         for col in cols:
-            start, end = m.span(col.name)
-            repls.append((start, end, texts[offset]))
+            text = texts[offset]
             offset += 1
+            # An inherited cell is not on this line, so it has no group to
+            # replace and nothing to add -- but it is still one of the row's
+            # values, so the offset moves past it either way.
+            if col.context is not None:
+                continue
+            start, end = m.span(col.name)
+            repls.append((start, end, text))
         if "valid" in m.groupdict() and m.group("valid") is not None:
             start, end = m.span("valid")
             repls.append((start, end, str(index + 1)))

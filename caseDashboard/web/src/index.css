@@ -162,14 +162,17 @@
       0 5px 10px -3px rgba(0, 0, 0, 0.55),
       0 16px 32px -10px rgba(0, 0, 0, 0.62),
       0 32px 64px -20px rgba(0, 0, 0, 0.5);
-    border: 1px solid var(--glass-rim);
+    border: 1.25px solid var(--glass-rim);
     box-shadow:
       /* Lit from above, so the top edge catches the light and the bottom edge
          falls into shade -- together with the dark seam just outside the
-         border that is what gives the pane a thickness. */
-      inset 0 1px 0 rgba(255, 255, 255, 0.16),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-      0 0 0 1px rgba(0, 0, 0, 0.32),
+         border that is what gives the pane a thickness.  Every band here is
+         one and a quarter pixels wide, the border included: at a single pixel
+         the edge is a hairline, and much past this the pane stops reading as
+         glass and starts reading as a framed box. */
+      inset 0 1.25px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1.25px 0 rgba(0, 0, 0, 0.3),
+      0 0 0 1.25px rgba(0, 0, 0, 0.32),
       var(--glass-lift);
     backdrop-filter: blur(18px) saturate(180%);
     -webkit-backdrop-filter: blur(18px) saturate(180%);
@@ -463,10 +466,12 @@ html[data-theme="light"] .btn-glass {
     0 32px 64px -20px rgba(112, 62, 44, 0.09);
   box-shadow:
     /* The top edge still catches the light -- it is just white on white now,
-       which is what gives a fresh pane its shine. */
-    inset 0 1px 0 rgba(255, 255, 255, 0.8),
-    inset 0 -1px 0 rgba(112, 62, 44, 0.05),
-    0 0 0 1px rgba(112, 62, 44, 0.045),
+       which is what gives a fresh pane its shine.  Same one-and-a-quarter-pixel
+       bands as the dark theme: the edge is what tells a pane from a tint on
+       either backdrop, and it has to be the same slab thickness in both. */
+    inset 0 1.25px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1.25px 0 rgba(112, 62, 44, 0.05),
+    0 0 0 1.25px rgba(112, 62, 44, 0.045),
     var(--glass-lift);
   /* Less saturation than the dark theme: the backdrop is nearly white, so the
      same boost mostly amplifies the blobs behind the pane. */

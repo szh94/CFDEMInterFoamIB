@@ -28,9 +28,9 @@ export function DerivedPanel() {
   });
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="glass lift flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg">
       {/* ---- summary ---- */}
-      <div className="shrink-0 border-b border-line px-3 py-2.5">
+      <div className="shrink-0 border-b border-line-soft bg-wash px-3 py-2.5">
         <div className="flex items-center gap-2">
           <IconGrid width={13} height={13} className="text-accent" />
           <span className="text-[12px] font-medium">{t.t("Derived metrics and checks")}</span>

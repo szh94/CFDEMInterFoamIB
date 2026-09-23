@@ -47,6 +47,21 @@ const BOX_W_SWITCH = "w-[2.95rem]"; // 4.2rem * 0.7
  */
 const PIN_W = "lg:w-[calc(50%-153px)]"; // 41 + 112 (one 7rem box)
 
+/**
+ * How many of a table's rows share one line (see `Param.row_per_line`).  A row
+ * of a few narrow cells leaves most of the card empty, so several of them side
+ * by side read better than one per line -- but a row that needs the width (a
+ * block's five columns) keeps a line to itself, which is the fallback here.
+ *
+ * Spelled out rather than built from the count: Tailwind has to see the class
+ * in the source to emit it.
+ */
+const ROW_PACK: Record<number, string> = {
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-4",
+};
+
 interface Props {
   param: Param;
   /** The rest of a grouped quantity (see `Param.partners`): their boxes join
@@ -189,8 +204,15 @@ export function ParamField({
       triple gets one box per column, each under its own label; a triple keeps
       the axis-lettered box it has always had. */
   const columns: ParamColumn[] = param.columns ?? [];
-  const perColumn = repeats && columns.length > 3;
-  const isTextColumn = (j: number) => columns[j]?.type === "text";
+  const perColumn = repeats && param.per_column;
+  /** The grid the rows are laid out in: one per line unless the rule says
+      otherwise, both for the per-column tables and for the triple ones. */
+  const rowPack = ROW_PACK[param.row_per_line];
+  /** A column that holds text rather than a number -- a note, a block's corner
+      numbers, the grading descriptor and its arguments.  `enum` counts: its
+      cell is a string too, just one chosen from a list. */
+  const isStringColumn = (j: number) =>
+    columns[j]?.type === "text" || columns[j]?.type === "enum";
 
   /**
    * The columns in the order the panel draws them.  A free-text column is a
@@ -205,7 +227,7 @@ export function ParamField({
    */
   const drawnColumns = columns
     .map((col, j) => ({ col, j }))
-    .sort((a, b) => Number(isTextColumn(a.j)) - Number(isTextColumn(b.j)));
+    .sort((a, b) => Number(isStringColumn(a.j)) - Number(isStringColumn(b.j)));
 
   /** The value typed into one cell, or `null` when its pending value is still
       the file's own -- i.e. nobody has touched it. */
@@ -213,7 +235,7 @@ export function ParamField({
     const base = fileRows[i]?.[j];
     const pending = displayRows[i]?.[j];
     if (pending === undefined || pending === base) return null;
-    return isTextColumn(j) ? String(pending) : Number(pending);
+    return isStringColumn(j) ? String(pending) : Number(pending);
   };
 
   /**
@@ -233,13 +255,13 @@ export function ParamField({
   const cellOf = (i: number, j: number): CellValue => {
     const typed = typedCell(i, j);
     if (typed !== null) return typed;
-    if (!isTextColumn(j)) {
+    if (!isStringColumn(j)) {
       const src = param.macros?.[i]?.[j];
       const linked = src ? edits[src] : undefined;
       if (linked !== undefined && Number.isFinite(Number(linked))) return Number(linked);
     }
     const file = fileRows[i]?.[j];
-    return file ?? (isTextColumn(j) ? "" : 0);
+    return file ?? (isStringColumn(j) ? "" : 0);
   };
 
   const shownRow = (i: number): TableRow =>
@@ -436,8 +458,9 @@ export function ParamField({
   const compactTriple = triple && param.compact;
   const wideTriple = triple && !param.compact;
   const boxW = compactTriple ? BOX_W_NARROW : BOX_W;
-  /** A block of free text: its box is the whole width of the card, so the row
-      keeps that width too rather than squeezing the box into one column. */
+  /** A block of free text: its box is wide rather than one field wide, so the
+      row takes the whole card and the box fills what the label leaves -- the
+      label stays on the first line of the text rather than above it. */
   const text = param.type === "text";
 
   /**
@@ -585,24 +608,39 @@ export function ParamField({
     <div
       ref={ref}
       title={hint}
-      className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition ${
-        nested ? "" : "flex-wrap"
-      } ${expanded || text ? "lg:col-span-full" : wideTriple ? "lg:col-span-2" : ""} ${
+      className={`flex gap-2 rounded-md border px-2 py-1.5 transition ${
+        text ? "items-start" : "items-center"
+      } ${nested || text ? "" : "flex-wrap"} ${
+        expanded || text ? "lg:col-span-full" : wideTriple ? "lg:col-span-2" : ""
+      } ${
         focused
           ? "border-accent/60 bg-accent/[0.07] shadow-[0_8px_24px_-12px_rgba(53,198,212,0.6)] ring-1 ring-accent/30"
           : "border-transparent hover:border-line hover:bg-wash-2"
       } ${inactive ? "opacity-45" : ""}`}
     >
-      {dot}
+      {/* The dot sits on the row's own cross axis, which a text row puts at the
+          top -- so it carries the same offset the label does and lands beside
+          the first line rather than above it.  The wrapper owns the dot's width
+          because a real box needs it: under `contents` the placeholder span is
+          the flex item and its `w-[10px]` applies, but once the wrapper is a box
+          the placeholder is inline again and collapses -- which would pull this
+          row's label 10px left of every other row's. */}
+      <span className={`w-[10px] shrink-0 ${text ? "mt-[5px]" : "contents"}`}>{dot}</span>
 
       {/* Unit hugs the label, not the input: `Domain x min m` reads as a unit,
           `Domain x min ......... m` reads as a stray glyph in the gap.
 
           A triple row that spans two tracks pins its label rather than growing
-          it -- see `PIN_W` for what that width is and why. */}
+          it -- see `PIN_W` for what that width is and why.  A text row lets the
+          label hug its own name for the same reason in reverse: the box beside
+          it is prose, and every pixel the label grows is one the prose loses. */}
       <span
         className={`flex min-w-0 items-center gap-1.5 ${
-          wideTriple ? `${PIN_W} lg:flex-none` : "flex-1"
+          text
+            ? "shrink-0 self-start py-1"
+            : wideTriple
+              ? `${PIN_W} lg:flex-none`
+              : "flex-1"
         }`}
       >
         <span className="truncate text-[12.5px] text-ink" title={param.id}>
@@ -765,22 +803,23 @@ export function ParamField({
           {param.collapsible ? (
             markerBoxes
           ) : repeats ? (
-            // One row of the table per line, in the order the file has them --
-            // so the index in front is the one the block's own `hex` and
-            // `patches` lines refer to, or the particle's own number.  It is a
-            // fact about the line rather than a setting, so it is a plain label
-            // and not a box: the index column is the gutter the buttons below
-            // share.
+            // The rows of the table, in the order the file has them -- so the
+            // index in front is the one the block's own `hex` and `patches`
+            // lines refer to, or the particle's own number.  It is a fact about
+            // the line rather than a setting, so it is a plain label and not a
+            // box: the index column is the gutter the buttons below share.
             //
             // A rule of the triple's own shape keeps the one box it has always
             // had.  A wider row -- a particle is a note plus eight numbers --
             // gets one box per column instead, each under the name the backend
-            // gives it, on a line of its own.
+            // gives it.  How many of those rows share a line is the rule's word
+            // too (`Param.row_per_line`): a block needs the whole card, a
+            // face does not.
             <div
               className={
-                perColumn
-                  ? "grid grid-cols-1 gap-y-0.5"
-                  : "grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-4"
+                rowPack
+                  ? `grid gap-x-3 gap-y-0.5 ${rowPack}`
+                  : "grid grid-cols-1 gap-y-0.5"
               }
             >
               {displayRows.map((_, i) => (
@@ -800,7 +839,7 @@ export function ParamField({
                         <Cell
                           col={col}
                           value={shownRow(i)[j]}
-                          disabled={disabled}
+                          disabled={disabled || col.derived}
                           width={BOX_W_NARROW}
                           onCommit={(v) =>
                             commitRow(
@@ -826,26 +865,31 @@ export function ParamField({
               {/* The table is only ever grown and trimmed at the end, which is
                   why these two are here rather than on a row of their own: they
                   follow the rows, so they land in the last one whatever the
-                  count, and they read left to right in the order they act. */}
-              <span className="flex items-center gap-1.5">
-                <span className="w-4 shrink-0" />
-                <button
-                  onClick={addRow}
-                  disabled={disabled}
-                  title={t.t("Add a row at the end of the table")}
-                  className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
-                >
-                  {t.t("Add")}
-                </button>
-                <button
-                  onClick={removeRow}
-                  disabled={disabled || displayRows.length === 0}
-                  title={t.t("Take the last row off the end of the table")}
-                  className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
-                >
-                  {t.t("Remove last")}
-                </button>
-              </span>
+                  count, and they read left to right in the order they act.
+                  A table whose rows are not self-contained has neither
+                  (see `Param.row_append`): a patch header cannot be written
+                  or dropped without the block of faces under it. */}
+              {param.row_append && (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-4 shrink-0" />
+                  <button
+                    onClick={addRow}
+                    disabled={disabled}
+                    title={t.t("Add a row at the end of the table")}
+                    className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
+                  >
+                    {t.t("Add")}
+                  </button>
+                  <button
+                    onClick={removeRow}
+                    disabled={disabled || displayRows.length === 0}
+                    title={t.t("Take the last row off the end of the table")}
+                    className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
+                  >
+                    {t.t("Remove last")}
+                  </button>
+                </span>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-4">
@@ -888,13 +932,58 @@ function Cell({
   width: string;
   onCommit: (v: CellValue) => void;
 }) {
+  // An inherited cell is a reading, not a setting: it says which block the row
+  // sits in, and there is no token on this line to edit (see `Column.context`
+  // in the backend).  It is drawn as plain text so it does not offer a box the
+  // keyboard cannot reach anyway.  Its width is fixed like any other cell's --
+  // a name that is longer than the box is cut off rather than allowed to
+  // shove the column beside it out of line.
+  if (col.derived) {
+    return (
+      <span
+        style={col.width ? { width: col.width } : undefined}
+        className={`${col.width ? "shrink-0 " : ""}truncate rounded border border-transparent bg-field/60 px-2 py-1 font-mono text-[12px] leading-none text-ink-3`}
+        title={String(value ?? "")}
+      >
+        {String(value ?? "")}
+      </span>
+    );
+  }
   if (col.type === "text") {
     return (
       <StringBox
         value={String(value ?? "")}
+        width={col.width}
         disabled={disabled}
         onCommit={onCommit}
       />
+    );
+  }
+  if (col.type === "enum") {
+    const text = String(value ?? "");
+    return (
+      <div className="relative">
+        <select
+          disabled={disabled}
+          value={text}
+          onChange={(e) => onCommit(e.target.value)}
+          className="appearance-none rounded border border-line bg-field py-1 pl-2 pr-6 font-mono text-[12px] text-ink transition enabled:hover:border-line enabled:focus:border-accent enabled:focus:outline-none disabled:opacity-60"
+        >
+          {(col.options ?? []).map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+          {/* A cell the file spells otherwise is offered as itself rather than
+              silently rewritten to the first choice. */}
+          {!col.options?.includes(text) && <option value={text}>{text}</option>}
+        </select>
+        <IconChevron
+          width={11}
+          height={11}
+          className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-3"
+        />
+      </div>
     );
   }
   return (
@@ -915,6 +1004,10 @@ function Cell({
  * The block ends at a blank line, so a blank one here would take the particles
  * with it; the backend refuses the edit rather than writing it, and the box is
  * a textarea rather than a list of inputs because the lines are prose.
+ *
+ * It fills what the row's label leaves rather than the row's whole width --
+ * `min-w-0` is what lets it shrink instead of pushing the label onto a line of
+ * its own when the prose is long.
  */
 function TextArea({
   value,
@@ -938,7 +1031,7 @@ function TextArea({
         const next = draft.split("\n");
         if (!valuesEqual(next, value)) onCommit(next);
       }}
-      className="w-full resize-y rounded border border-line bg-field px-2 py-1 font-mono text-[12px] leading-snug text-ink transition focus:border-accent focus:outline-none disabled:opacity-60"
+      className="min-w-0 flex-1 resize-y rounded border border-line bg-field px-2 py-1 font-mono text-[12px] leading-snug text-ink transition focus:border-accent focus:outline-none disabled:opacity-60"
     />
   );
 }
@@ -1198,10 +1291,14 @@ function NumberBox({
 
 function StringBox({
   value,
+  width,
   disabled,
   onCommit,
 }: {
   value: string;
+  /** The width the rule fixes this column's box at (see `ParamColumn.width`);
+      absent -> the one the panel has always given a string cell. */
+  width?: string | null;
   disabled: boolean;
   onCommit: (v: string) => void;
 }) {
@@ -1217,7 +1314,8 @@ function StringBox({
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
-      className="w-[10rem] rounded border border-line bg-field px-2 py-1 font-mono text-[12px] text-ink transition focus:border-accent focus:outline-none disabled:opacity-60"
+      style={width ? { width } : undefined}
+      className={`${width ? "shrink-0 " : ""}w-[10rem] rounded border border-line bg-field px-2 py-1 font-mono text-[12px] text-ink transition focus:border-accent focus:outline-none disabled:opacity-60`}
     />
   );
 }

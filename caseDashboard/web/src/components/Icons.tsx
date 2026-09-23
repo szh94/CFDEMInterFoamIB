@@ -38,6 +38,16 @@ export const IconSphere = (p: P) => (
   </svg>
 );
 
+/** A wireframe box -- the geometry page.  Its three visible axes from one
+ * corner are the whole of what that page draws, so the glyph is the picture in
+ * miniature rather than a table of numbers like `IconGrid`. */
+export const IconCube = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M8 1.8 14 5.2v5.6L8 14.2 2 10.8V5.2z" />
+    <path d="M2 5.2 8 8.6l6-3.4M8 8.6v5.6" />
+  </svg>
+);
+
 /**
  * A scatter of dots -- the particle side.  Filled rather than stroked: at 14px
  * an outlined circle of this size just reads as a blob, and the size spread is

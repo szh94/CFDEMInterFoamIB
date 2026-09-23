@@ -75,7 +75,7 @@ def _triple(pid: str, group: str, file: str, head: str, tail: str, sep, **kw) ->
 # --------------------------------------------------------------------------
 
 #: The blockMeshDict half of the fluid side: the six extents, the corner table
-#: and the cell counts.  Declaration order doubles as display order, and the six
+#: and the block list.  Declaration order doubles as display order, and the six
 #: extents are one *group* rather than six rows: the dictionary writes them as
 #: six macros above ``vertices``, and that is exactly what the panel's fold
 #: unfolds -- each macro under the name the file gives it (``xco1``, ``yco2``
@@ -138,20 +138,128 @@ MESH_PARAMS: List[Param] = [
         scope=r"^vertices\s*$", scope_style="paren",
         pattern=r"^\s*\(\s*(?P<valx>\S+)\s+(?P<valy>\S+)\s+(?P<valz>\S+)\s*\)",
         vtype="float3", repeats=True, compact=True, row_seed=[0.0, 0.0, 0.0],
+        # Four corners to a line: three narrow boxes are a short row, and eight
+        # of them stacked one per line is a column the card does not need.
+        row_per_line=4,
         label="Vertices", default=[0.0, 0.0, 0.0],
         help="The mesh's corner points, one line each; changing a box writes "
              "that number where the file had its macro.",
     ),
+    #: The ``blocks`` list, one row per block: the block type, the eight corner
+    #: numbers it is built from, its division counts and how they are graded.
+    #: Declared as a *table* (``repeats``) even though every case here has
+    #: exactly one block, so the list is read as what it is rather than as the
+    #: one line ``hex (...)`` happens to occupy.
+    #:
+    #: The cells the node numbers and the division counts go in are text: they
+    #: travel in and out as the file spells them (``0  4  5  1  2  6  7  3``,
+    #: double spaces and all), which is why neither is worth a per-number box.
+    #: The grading is split in two -- the descriptor is an ``enum`` (the panel
+    #: offers it as a choice) and its arguments stay free text beside it, since
+    #: only ``simpleGrading`` takes a plain triple and ``edgeGrading`` twelve
+    #: numbers, and one box per number would be wrong for both.
+    #:
+    #: The read is deliberately loose -- any block type, any number of nodes in
+    #: the first bracket, as long as the second bracket holds numbers and a
+    #: grading descriptor follows -- which is what lets a case that is not
+    #: ``hex`` still be read instead of reported unresolved.
+    #:
+    #: The derived panel takes the *first* block's division counts for the cell
+    #: size and the total cell count sums every block's, which is the same
+    #: answer as before in a one-block case.
     Param(
-        id="mesh.cells", group="fluid", file="CFD/system/blockMeshDict",
+        id="mesh.blocks", group="fluid", file="CFD/system/blockMeshDict",
+        scope=r"^blocks\s*$", scope_style="paren",
         pattern=(
-            rf"^(?P<pre>\s*hex\s*\(\s*[\d\s]+\)\s*\(\s*)"
-            rf"(?P<valx>\d+)(?P<mid1>\s+)(?P<valy>\d+)(?P<mid2>\s+)"
-            rf"(?P<valz>\d+)(?P<post>\s*\)\s*.*)$"
+            r"^(?P<pre>\s*)(?P<vkind>[A-Za-z]\w*)\s*\(\s*(?P<vnodes>[\d\s]+?)\s*\)\s*"
+            r"\(\s*(?P<vcells>[\d\s]+?)\s*\)\s*(?P<vgrademethod>[A-Za-z]\w*)\s*"
+            r"(?P<vgradeargs>.*?)\s*$"
         ),
-        vtype="int3", label="Cell counts", default=[45, 45, 90],
-        compact=True,
-        help="Changing this also changes the cell size, cells/diameter and the total cell count.",
+        vtype="string", repeats=True,
+        row_columns=(
+            Column("vkind", "text", "type"),
+            Column("vnodes", "text", "nodes"),
+            Column("vcells", "text", "cells"),
+            Column(
+                "vgrademethod", "enum", "grading",
+                options=("simpleGrading", "edgeGrading"),
+            ),
+            Column("vgradeargs", "text", "grading parameters"),
+        ),
+        row_seed=["hex", "0  4  5  1  2  6  7  3", "1 1 1", "simpleGrading", "(1 1 1)"],
+        label="Geometry blocks",
+        help="One line per block. The division counts drive the cell size, the "
+             "cells/diameter verdict and the total cell count.",
+    ),
+    #: The boundary patches, in two tables rather than one line per patch with
+    #: its faces under it: a patch holds anywhere from one face to a hundred,
+    #: and a row of a *table* here is a line, so the faces cannot ride along
+    #: with the header they belong to.
+    #:
+    #: This one is the headers -- the type and the name, which is all the line
+    #: says.  Rows are edited where they are and never added or taken off: a
+    #: header introduces a parenthesised block of faces that the writer can
+    #: neither synthesize nor delete from the header alone, so the panel is not
+    #: offered the controls that would corrupt the file (``Param.row_append``).
+    #: The type is an ``enum`` of the descriptors ``blockMesh`` knows; a case
+    #: naming another one still reads, and the list grows to hold it.
+    #:
+    #: Three headers share a line: a type and a name is a short row, and a case
+    #: with a dozen patches is a dozen lines otherwise.  The name's box is ten
+    #: characters -- long enough for what patches are called, short enough that
+    #: nothing has to be reached for to see the type beside it.
+    Param(
+        id="mesh.patches", group="fluid", file="CFD/system/blockMeshDict",
+        scope=r"^patches\s*$", scope_style="paren",
+        pattern=r"^(?P<pre>\s*)(?P<vpatchtype>[A-Za-z]\w*)\s+(?P<vpatchname>\S+)\s*$",
+        vtype="string", repeats=True, row_append=False, row_per_line=3,
+        row_columns=(
+            Column(
+                "vpatchtype", "enum", "patch type",
+                options=(
+                    "patch", "wall", "empty", "symmetryPlane", "symmetry",
+                    "cyclic", "wedge", "processor",
+                ),
+            ),
+            Column(
+                "vpatchname", "text", "patch name",
+                width="calc(10ch + 1.25rem)",
+            ),
+        ),
+        label="Boundary patches",
+        help="The patches the mesh is cut into, one line each. The faces under "
+             "each of them are the table below.",
+    ),
+    #: The faces themselves: four corner numbers per line, the same numbering
+    #: ``vertices`` uses, and the patch each one belongs to read off the header
+    #: above it (``Column.context``) rather than written out again -- which is
+    #: the shape the file has, and the reason the two are two tables.
+    #:
+    #: Adding a row appends a face to the *last* patch, which is the only place
+    #: this table can grow: the rows are the file's lines, in the file's order,
+    #: and a table is only ever grown and trimmed at the end.
+    Param(
+        id="mesh.faces", group="fluid", file="CFD/system/blockMeshDict",
+        scope=r"^patches\s*$", scope_style="paren",
+        pattern=r"^(?P<pre>\s*)\(\s*(?P<vnodes>[\d\s]+?)\s*\)\s*$",
+        vtype="string", repeats=True, row_per_line=3,
+        # Both boxes are narrow and fixed, which is what lines the two columns
+        # up down the table: a face is a patch name and a short run of corner
+        # numbers, and neither is wide enough to want a box that grows with it.
+        # The nodes box holds five numbers and the spaces between them; a longer
+        # run scrolls inside it.
+        row_columns=(
+            Column(
+                "vpatch", "text", "patch",
+                context=r"^\s*[A-Za-z]\w*\s+(?P<vpatch>\S+)\s*$",
+                width="6rem",
+            ),
+            Column("vnodes", "text", "nodes", width="6rem"),
+        ),
+        row_seed=["", "0 1 2 3"],
+        label="Patch faces",
+        help="One line per face: the four corner numbers, by the vertices "
+             "table's numbering. The patch is the header each face sits under.",
     ),
 ]
 

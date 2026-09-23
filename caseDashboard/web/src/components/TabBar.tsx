@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { useStore } from "../store";
 import { useGroupLevels, useLiveEdits, useT } from "../hooks";
-import { IconGrid, IconLink, IconParticles, IconSteps } from "./Icons";
+import { IconCube, IconGrid, IconLink, IconParticles, IconSteps } from "./Icons";
 import type { Group } from "../types";
 
 const ICONS: Record<string, typeof IconGrid> = {
+  geometry: IconCube,
   fluid: IconGrid,
   particle: IconParticles,
   coupling: IconLink,

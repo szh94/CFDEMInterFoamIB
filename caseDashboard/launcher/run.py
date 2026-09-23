@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """One-command launcher for the case dashboard.
 
-    python caseDashboard/run.py            # dev:  backend 8765 + Vite 5173
-    python caseDashboard/run.py --prod     # prod: build once, serve on 8765
+    python caseDashboard/launcher/run.py            # dev:  backend 8765 + Vite 5173
+    python caseDashboard/launcher/run.py --prod     # prod: build once, serve on 8765
+
+It lives one level below ``caseDashboard/`` on purpose: double-clicking
+``caseDashboard/dashboard.vbs`` is the way in, and this file is what that window
+calls -- an implementation detail rather than something to open by hand.
 
 Node is a *build tool only* -- it never runs at serve time.  Everything stays on
 the Windows side: the dashboard reads and writes the case dictionaries and never
@@ -26,7 +30,8 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-DASH_DIR = Path(__file__).resolve().parent
+LAUNCH_DIR = Path(__file__).resolve().parent
+DASH_DIR = LAUNCH_DIR.parent
 REPO_DIR = DASH_DIR.parent
 WEB_DIR = DASH_DIR / "web"
 DIST_DIR = WEB_DIR / "dist"
@@ -162,19 +167,141 @@ def open_later(url: str, delay: float = 1.5) -> None:
     threading.Timer(delay, lambda: webbrowser.open(url)).start()
 
 
-def reuse_running() -> bool:
-    """Send the browser to a dashboard that is already up.
+def reuse_running(windowed: bool = False) -> bool:
+    """Send whoever asked to a dashboard that is already up.
 
     Returns True when the API port answered as one of ours, which means there is
     nothing left to start and the caller should stop.  Only a *foreign* occupant
     is an error; that is left to ``require_free``.
+
+    ``windowed`` says the caller is the application window, and a window is then
+    what it gets: handing the URL to the default browser instead would answer a
+    double-click on ``dashboard.vbs`` with an ordinary tab in whatever browser
+    the case happens to use, and no window of its own at all.
     """
     if not dashboard_running():
         return False
     print(f"\n[caseDashboard] the dashboard is already running -> {API_URL}\n")
-    if _OPEN_BROWSER:
+    if windowed:
+        open_app_window(API_URL)
+    elif _OPEN_BROWSER:
         webbrowser.open(API_URL)
     return True
+
+
+# --------------------------------------------------------------------------
+# application window
+# --------------------------------------------------------------------------
+
+# The dashboard window is a browser process this script owns and waits on, so
+# closing the window is what stops the server -- there is no console to keep
+# open.  That only works while the process really is ours, which is why the
+# window gets a private profile: a plain ``msedge --app=`` would hand the URL to
+# an already-running browser and exit on the spot, leaving nothing to wait for.
+BROWSER_PROFILE = DASH_DIR / ".cache" / "app-profile"
+
+# Edge first (it ships with Windows), then Chrome.  Either can host a chromeless
+# window; nothing here cares which one answered.
+BROWSER_CANDIDATES = (
+    r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe",
+    r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe",
+    r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+    r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
+    r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe",
+    r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe",
+)
+
+LOG_FILE = DASH_DIR / ".cache" / "launcher.log"
+
+
+def chromium_browser() -> str | None:
+    for pattern in BROWSER_CANDIDATES:
+        candidate = Path(os.path.expandvars(pattern))
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def keep_a_log() -> None:
+    """Give a windowless launcher somewhere to talk.
+
+    ``pythonw.exe`` hands the process no stdout and no stderr at all, and every
+    ``print(..., file=sys.stderr)`` in here -- ``die()`` above all -- would then
+    raise ``AttributeError`` instead of reporting what actually went wrong.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    handle = LOG_FILE.open("w", encoding="utf-8", buffering=1)
+    if sys.stdout is None:
+        sys.stdout = handle
+    if sys.stderr is None:
+        sys.stderr = handle
+
+
+def open_app_window(url: str) -> subprocess.Popen | None:
+    """Open ``url`` in the chromeless application window.
+
+    Both the launcher that owns a server and a second double-click on
+    ``dashboard.vbs`` come through here, so the window is the same one either
+    way -- the private profile is what makes an already-open window take the URL
+    rather than a second window appearing beside it.
+    """
+    browser = chromium_browser()
+    if browser is None:
+        webbrowser.open(url)
+        return None
+    BROWSER_PROFILE.mkdir(parents=True, exist_ok=True)
+    return subprocess.Popen(
+        [
+            browser,
+            f"--app={url}",
+            f"--user-data-dir={BROWSER_PROFILE}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            # Without this the browser may outlive its last window and the
+            # waiting process would never come back.
+            "--disable-background-mode",
+        ],
+        cwd=str(REPO_DIR),
+    )
+
+
+def serve_windowed() -> None:
+    """Serve until the application window is closed."""
+    if reuse_running(windowed=True):
+        return
+    require_free(API_PORT, "backend API")
+
+    if chromium_browser() is None:
+        die(
+            "neither Edge nor Chrome was found, and the dashboard window needs "
+            "one of them.\nRun `python caseDashboard/launcher/run.py --prod` "
+            "from a terminal instead; it opens whatever browser you have."
+        )
+
+    ensure_deps()
+    ensure_build()
+
+    from caseDashboard.server import app as backend
+
+    httpd = backend.serve(HOST, API_PORT)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(f"[caseDashboard] serving {API_URL} to the application window")
+    print("[caseDashboard] opening the window -- close it to stop the dashboard.")
+
+    try:
+        window = open_app_window(API_URL)
+        if window is not None:
+            window.wait()
+    except KeyboardInterrupt:
+        print("\n[caseDashboard] shutting down ...")
+    except OSError as exc:
+        die(f"could not start {browser}: {exc}")
+
+    httpd.shutdown()
+    httpd.server_close()
+    print("[caseDashboard] window closed, stopped.")
 
 
 # --------------------------------------------------------------------------
@@ -245,6 +372,8 @@ def serve_dev() -> None:
 
 
 def main() -> None:
+    keep_a_log()
+
     # Progress must appear immediately; a piped stdout would otherwise buffer
     # the whole startup behind a long `npm install`.
     for stream in (sys.stdout, sys.stderr):
@@ -268,6 +397,12 @@ def main() -> None:
         action="store_true",
         help="do not open the browser",
     )
+    parser.add_argument(
+        "--window",
+        action="store_true",
+        help="serve the built frontend in a chromeless browser window and stop "
+        "when that window is closed (what dashboard.vbs runs)",
+    )
     args = parser.parse_args()
 
     if args.no_browser:
@@ -278,7 +413,9 @@ def main() -> None:
     sys.path.insert(0, str(REPO_DIR))
 
     print("[caseDashboard] repo:", REPO_DIR)
-    if args.prod:
+    if args.window:
+        serve_windowed()
+    elif args.prod:
         serve_prod()
     else:
         serve_dev()

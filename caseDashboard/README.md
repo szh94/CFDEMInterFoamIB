@@ -28,27 +28,27 @@
 
 ## 启动
 
-```bash
-python caseDashboard/run.py
-```
+双击 `caseDashboard/dashboard.vbs` —— **唯一入口**，不需要命令行。
 
-首次运行会自动在 `caseDashboard/web` 下执行 `npm install`（需要 Node.js）。
-随后自动打开浏览器。
+仪表盘开在一个**无地址栏的浏览器应用窗口**里，**关掉窗口服务就结束**，不留后台进程，
+也跟控制台无关——没有需要一直开着的命令行窗口。已在运行时会直接把 URL 交给当前实例
+（双击入口给的是**同样的应用窗口**，不是默认浏览器的一个标签页），不会报端口被占用。首次双击会自动在 `caseDashboard/web` 下执行 `npm install`（需要 Node.js）。
+启动失败会弹窗并指向日志 `caseDashboard/.cache/launcher.log`。
+
+### 命令行（开发用）
+
+`caseDashboard/launcher/run.py` 就是上面那个窗口实际调用的启动器，平时不用手动跑，
+改前端 / 后端时才用得上：
 
 | 模式 | 命令 | 端口 |
 | --- | --- | --- |
-| 开发（默认，热更新） | `python caseDashboard/run.py` | Vite `5173` + 后端 `8765` |
-| 生产（单端口） | `python caseDashboard/run.py --prod` | 后端 `8765` 直接托管 `web/dist` |
+| 开发（默认，热更新） | `python caseDashboard/launcher/run.py` | Vite `5173` + 后端 `8765` |
+| 生产（单端口） | `python caseDashboard/launcher/run.py --prod` | 后端 `8765` 直接托管 `web/dist` |
 
-其他参数：`--no-browser` 不自动开浏览器。
+其他参数：`--no-browser` 不自动开浏览器；`--window` 是双击入口用的窗口模式。
 
-### 双击入口
-
-双击 `caseDashboard/start-dashboard.bat`（等价于 `run.py --prod`，控制台输出英文）。
-已在运行时会直接打开浏览器跳过去，不会报端口被占用。
-
-`caseDashboard/launcher.html` 是兜底：后端在跑就跳过去，没在跑就提示先双击上面那个 `.bat`。
-`file://` 页面拉不起进程，所以它是「再打开一次」的快捷方式，不是启动器。
+浏览器按 Edge → Chrome 顺序找，二者都没有时改用 `--prod`（打开系统默认浏览器，靠 Ctrl+C
+停止）。想看启动日志就跑 `--window`。
 
 ### 环境要求
 
@@ -115,7 +115,7 @@ python caseDashboard/run.py
 `tutorial/two_phase_sphere_settling`，而在仓库外则原样显示绝对路径。
 
 算例**不按名字匹配**，所以 `tutorial/multi_sphere_fish`（clump 颗粒、脚本名不同）也直接能开：
-参数表 94 项它全部识别得到，顶部提示里不会留任何「无法定位」。
+参数表 146 项它全部识别得到，顶部提示里不会留任何「无法定位」。
 
 路径框右上角的 **浏览…** 直接弹 Windows 的选文件夹对话框（`/api/explorer/pick`），
 选完就把路径填进框里并立即打开。**这是唯一能拿到真实绝对路径的方式**——浏览器自带的
@@ -175,6 +175,29 @@ DEM 页的**壁面 wall 设置**卡片里，每个壁面在标签和数值框之
 - 注释掉的壁面仍然能读到坐标值，所以「取消 → 增加」是逐字节可逆的，
   中途也不至于丢失原来的数值
 
+### 黏度模型：一个模型框 + 一个参数框
+
+流体页里的「水 (1 相流体) 的黏度模型」/「空气 (2 相流体) 的黏度模型」两行是**一个控件占两个框**：
+
+- 右边**模型框**是下拉框，列 OpenFOAM 5.x 真正定义的那六个黏度模型
+  （`Newtonian` / `BirdCarreau` / `Casson` / `CrossPowerLaw` / `HerschelBulkley` / `powerLaw`）。
+  算例在用表上之外的模型（比如要 Function1 子字典的 `strainRateFunction`）不会丢值：
+  下拉框会把它当成额外一项照原样显示，只是面板不展开它的系数
+- 再右边**参数框**是个可以展开的按钮，展开后列出**当前选中的那个模型**要用到的系数，
+  每个都能直接改；换模型这个列表就跟着换。`nu` 也是其中之一（它是 `Newtonian` 的系数），
+  所以它不再单独占一行；**该相的密度也在这张表里，而且排在第一个**——它不属于任何
+  模型，换模型不会把它藏起来，两个相的表读起来因此是同构的。它的标签就写 `rho`，
+  中英文都一样：和系数一样，这是文件里的关键字，不是要翻译的文案
+- 列表按**四列**排，一行放下一个模型的四个系数，而不是四行各占满整张卡片宽度
+- 非 Newtonian 模型的系数不在相块里，而在同级的 `<模型名>Coeffs` 子字典里，所以算例
+  跑 Newtonian 时**文件里根本没有这些行**。这时面板会标「写入时创建」——可编辑，
+  点「更新参数」时**由仪表盘把整块建出来**
+
+自动建块时**量纲是黏度的系数一律取该相现有的 `nu`**，其余取退化值（`n`=1、
+秒量纲的 `k`/`m`=0、`tau0`=0），所以新建的块在数学上精确等于该相原来的 Newtonian 黏度：
+换模型 + 写入不会悄悄改掉物理，只是把原来没有的自由度露出来。切回 `Newtonian`
+只改模型那一行——已经建出来的块**保留不删**，来回切换不会丢掉你改过的系数。
+
 ## 安全边界
 
 - **只绑 `127.0.0.1`**，不对外暴露
@@ -228,9 +251,9 @@ HTTP 层并在文件里留下/去掉注释、子域总数在预览里已按新�
 
 ```
 caseDashboard/
-  run.py                  一键启动（Windows 侧）
-  start-dashboard.bat     双击启动（等价于 run.py --prod）
-  launcher.html           双击入口页：探测端口，在跑就跳过去
+  dashboard.vbs           唯一双击入口（无控制台）
+  launcher/
+    run.py                启动器：建前端、起后端、开应用窗口（vbs 调的就是它）
   server/
     app.py                ThreadingHTTPServer + 路由 + 静态托管
     schema.py             Param 声明式定义

@@ -98,16 +98,31 @@ export function ParamPanel({ groupId }: Props) {
         // away by the Show/Hide button degrades to a plain row rather than
         // vanishing with it.
         const byId = new Map(shown.map((p) => [p.id, p]));
-        const claimed = new Set(
-          shown.flatMap((p) =>
+        // The second claim rule, for `Param.owner` rather than `partners`: a
+        // phase's viscosity coefficients belong to the row naming the model
+        // they are made of, and that row is what unfolds them -- so they get no
+        // line of their own.  Only the ones whose owner is on screen: an owner
+        // folded away by Show/Hide leaves its coefficients as plain rows rather
+        // than making them vanish with it.
+        const ownedBy = new Map<string, typeof shown>();
+        for (const p of shown) {
+          if (!p.owner || !byId.has(p.owner)) continue;
+          const list = ownedBy.get(p.owner);
+          if (list) list.push(p);
+          else ownedBy.set(p.owner, [p]);
+        }
+        const claimed = new Set([
+          ...shown.flatMap((p) =>
             p.partners.filter((id) => byId.has(id)).map((id) => id),
           ),
-        );
+          ...[...ownedBy.values()].flatMap((list) => list.map((p) => p.id)),
+        ]);
         const rows = shown
           .filter((p) => !claimed.has(p.id))
           .map((p) => ({
             a: p,
             rest: p.partners.filter((id) => byId.has(id)).map((id) => byId.get(id)!),
+            owned: ownedBy.get(p.id) ?? [],
           }));
         return (
           <section
@@ -157,14 +172,19 @@ export function ParamPanel({ groupId }: Props) {
             </header>
 
             <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 p-1 lg:grid-cols-2 xl:grid-cols-3">
-              {rows.map(({ a, rest }) => (
+              {rows.map(({ a, rest, owned }) => (
                 <ParamField
                   key={a.id}
                   param={a}
                   partners={rest}
-                  focused={[a, ...rest].some((p) => focusParam === p.id)}
-                  inactive={[a, ...rest].some((p) => inactiveSet.has(p.id))}
-                  issueLevel={mergeLevel([a, ...rest].map((p) => issues[p.id]))}
+                  owned={owned}
+                  focused={[a, ...rest, ...owned].some((p) => focusParam === p.id)}
+                  inactive={[a, ...rest, ...owned].some((p) => inactiveSet.has(p.id))}
+                  issueLevel={mergeLevel([
+                    a,
+                    ...rest,
+                    ...owned,
+                  ].map((p) => issues[p.id]))}
                 />
               ))}
             </div>

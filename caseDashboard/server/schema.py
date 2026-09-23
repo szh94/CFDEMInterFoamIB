@@ -15,16 +15,38 @@ The surrounding text is never rewritten: applying an edit means
 appears four times in ``couplingProperties`` and matching the wrong block would
 silently corrupt the case, so the rule is pinned to a brace-delimited block and
 "exactly one match" is enforced as a safety rail.
+
+``repeats`` is the one rule that is a *table* rather than a value: every line
+the pattern matches inside the scope is a row of its own (the ``vertices`` list
+of ``blockMeshDict``), so "exactly one match" would be the wrong safety rail --
+there the count *is* the shape of the thing being read.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-SCALAR_TYPES = ("float", "int", "bool", "string", "enum")
+SCALAR_TYPES = ("float", "int", "bool", "string", "enum", "text")
 TRIPLE_TYPES = ("float3", "int3")
 ALL_TYPES = SCALAR_TYPES + TRIPLE_TYPES
+
+
+@dataclass(frozen=True)
+class Column:
+    """One column of a ``Param.repeats`` table's row.
+
+    The default row is the triple's own ``valx`` / ``valy`` / ``valz``; a rule
+    whose row is spread over several lines declares its columns explicitly (see
+    ``Param.row_columns`` / ``Param.row_lines``).  ``vtype`` decides how the
+    token is read and written: ``text`` is copied through as a string, numbers
+    are parsed.  ``label``/``unit`` are what the panel prints above the column.
+    """
+
+    name: str
+    vtype: str = "float"
+    label: str = ""
+    unit: str = ""
 
 
 @dataclass
@@ -64,9 +86,36 @@ class Param:
     range: Optional[List[float]] = None
     help: str = ""
     default: Any = None
-    #: Regex locating an enclosing block, e.g. ``^IBProps\\s*$``.
-    scope: Optional[str] = None
+    #: Regex locating an enclosing block, e.g. ``^IBProps\\s*$``.  A *list* of
+    #: them narrows the search one block at a time -- the phase ``water { ... }``
+    #: and then the ``BirdCarreauCoeffs { ... }`` inside it -- which is how a
+    #: rule reaches a sub-dictionary of the block that names it.
+    scope: Optional[Union[str, List[str]]] = None
     scope_style: str = "brace"
+    #: The keyword this rule anchors on.  A rule usually reads it off its own
+    #: pattern; it is spelled out here for the rules whose line may have to be
+    #: *created*, where there is no matched text to take it from.
+    key: str = ""
+    #: Dimension set of a created dimensioned entry, written between the
+    #: brackets -- ``"0 2 -1 0 0 0 0"`` for a kinematic viscosity.
+    dims: str = ""
+    #: The parameter that decides whether this one is live at all: a phase's
+    #: ``transportModel``, say, which is what gives its coefficients a meaning.
+    owner: Optional[str] = None
+    #: The value of ``owner`` under which this parameter applies.
+    model: Optional[str] = None
+    #: Name of the sub-dictionary this parameter lives in
+    #: (``"BirdCarreauCoeffs"``), or ``None`` when it is written directly in the
+    #: owner's own block.  A case is free not to have that sub-dictionary at all
+    #: -- a Newtonian case has no coefficients -- and then the writer builds it,
+    #: which is the whole reason "no line matched" can be a legitimate state
+    #: rather than a broken rule (see ``Param.owner``).
+    block: Optional[str] = None
+    #: Where a created parameter's opening value comes from: the id of another
+    #: parameter.  ``None`` -> ``default``.  Used so that a block built for a
+    #: model switch reproduces the viscosity the case already had instead of
+    #: silently changing the physics.
+    seed_from: Optional[str] = None
     #: Spellings used when writing a bool; keeps the file's own dialect.
     bool_true: str = "on"
     bool_false: str = "off"
@@ -104,6 +153,41 @@ class Param:
     #: point is the right edge: the last of the three boxes then lines up with
     #: the single box of the rows above it.  Purely a display choice.
     compact: bool = False
+    #: The row's boxes sit behind a fold: on screen the row is its label and a
+    #: count, and the boxes appear when it is unfolded.  For a grouped row
+    #: (``partners``) it is the whole set that folds -- the blockMeshDict macros
+    #: the corners are built from -- so the mesh card opens with one line where
+    #: six boxes would be, and the fold lists them by the names the file uses.
+    #: Purely a display choice: every id keeps its own rule, line and edit, and a
+    #: folded row is written exactly as an unfolded one.
+    collapsible: bool = False
+    #: The rule matches a *list*: every hit inside the scope is one row of a
+    #: table rather than a second, ambiguous copy of one value.  The shape stays
+    #: the triple's, so the boxes read as they do everywhere else; what changes
+    #: is the cardinality and the write: the reader collects all of them in file
+    #: order and the writer splices each row's components separately, so an
+    #: untouched component keeps whatever the file spelled there (a ``$macro``
+    #: included) instead of being rewritten as the number it resolves to.
+    repeats: bool = False
+    #: The columns the *anchor* line of a ``repeats`` row contributes.  Unset
+    #: falls back to the shape the value type implies -- one ``val``, or the
+    #: ``valx``/``valy``/``valz`` of a triple -- which is what the vertex table
+    #: uses.  A row spread over several lines sets it, so the anchor can be a
+    #: line that carries columns of its own (the ``#notes_pN:`` lead line of a
+    #: DEM particle).
+    row_columns: Optional[Tuple[Column, ...]] = None
+    #: ``(regex, columns)`` for each line *after* the anchor that belongs to the
+    #: same row.  Empty for the ordinary one-line table.  A DEM particle is
+    #: three lines -- the note, ``create_atoms`` and ``set atom`` -- and this is
+    #: what says so: the reader looks for each pattern on the lines following
+    #: the anchor, and the writer copies those lines when it adds a particle.
+    #: A regex may capture a ``valid`` group, which is not a column: the writer
+    #: writes the row's own ordinal there, which is how the particle number in
+    #: ``#notes_pN`` and ``set atom N`` stays right after an add or a remove.
+    row_lines: Tuple[Tuple[str, Tuple[Column, ...]], ...] = ()
+    #: What a row starts at when the panel adds one (see ``resolved_to_api``).
+    #: ``None`` -> the last row's own numbers, with text columns blank.
+    row_seed: Optional[List[Any]] = None
     #: Free-form note rendered next to the field.
     note: str = ""
     #: Display order inside a group.
@@ -114,6 +198,10 @@ class Param:
             raise ValueError(f"{self.id}: unknown vtype {self.vtype!r}")
         if self.vtype == "enum" and not self.options:
             raise ValueError(f"{self.id}: enum needs options")
+        if self.model is not None and self.owner is None:
+            raise ValueError(f"{self.id}: a model to be read against needs an owner")
+        if self.row_lines and not self.repeats:
+            raise ValueError(f"{self.id}: companion lines need repeats")
         if not self.label:
             self.label = self.id.rsplit(".", 1)[-1]
 
@@ -122,8 +210,31 @@ class Param:
         return self.vtype in TRIPLE_TYPES
 
     @property
+    def row_specs(self) -> List[Tuple[str, Tuple[Column, ...]]]:
+        """``(regex, columns)`` for every line of a row, anchor first."""
+        if self.row_columns is not None:
+            anchor = tuple(self.row_columns)
+        elif self.is_triple:
+            anchor = tuple(Column(n) for n in ("valx", "valy", "valz"))
+        else:
+            anchor = (Column("val", self.vtype),)
+        return [(self.pattern, anchor), *self.row_lines]
+
+    @property
     def value_groups(self) -> List[str]:
-        return ["valx", "valy", "valz"] if self.is_triple else ["val"]
+        return [c.name for c in self.row_specs[0][1]]
+
+    @property
+    def columns(self) -> List[Column]:
+        """Every column of a row, across all its lines.  Empty when not a table."""
+        if not self.repeats:
+            return []
+        return [col for _, cols in self.row_specs for col in cols]
+
+    @property
+    def row_groups(self) -> List[str]:
+        """Every column name of a row, the anchor's first (see ``columns``)."""
+        return [c.name for c in self.columns]
 
 
 @dataclass

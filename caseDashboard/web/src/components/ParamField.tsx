@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, valuesEqual } from "../store";
-import { useT } from "../hooks";
+import { useIssueMap, useT } from "../hooks";
 import { fmtNum, shortenFile } from "../format";
 import { IconAlert, IconChevron } from "./Icons";
-import type { Param, ParamValue, TripleValue } from "../types";
+import type {
+  CellValue,
+  Param,
+  ParamColumn,
+  ParamValue,
+  TableRow,
+  TextLines,
+  TripleTable,
+  TripleValue,
+} from "../types";
 
 /** One value box, and the narrow one a row of several boxes spends its width on
     (two, or three, side by side).  A grouped row's boxes all take the narrow
@@ -44,6 +53,22 @@ interface Props {
       this one's row and they get no row of their own.  Empty -> the plain
       single-param row this component has always been. */
   partners?: Param[];
+  /** The params this one *owns* (see `Param.owner`): a phase's viscosity
+      coefficients, whose lives follow from the model named in this row.  They
+      get no row of their own either -- they are the box this row unfolds, and
+      the ones on screen are the ones the model currently in force defines. */
+  owned?: Param[];
+  /** Set on an owned parameter whose owner is being switched *to* its model in
+      this same write.  The file still says otherwise, so the backend has read
+      it as `inactive`; but `owner_selects` looks at the pending value too, so
+      the coefficient is writable now -- and switching a model and setting its
+      coefficients should not take two rounds of Apply. */
+  ownerSelected?: boolean;
+  /** Set on an owned parameter, inside its owner's parameter list.  The cells
+      there are a quarter of the card wide, which is room for a name and a box
+      but not for a badge beside them -- so a badge is the list's to show (see
+      the caller), not each row's, and the row does not wrap. */
+  nested?: boolean;
   /** Highlighted by a click in the derived/consistency panel. */
   focused: boolean;
   inactive: boolean;
@@ -54,10 +79,21 @@ interface Props {
 export function ParamField({
   param,
   partners = [],
+  owned = [],
+  ownerSelected = false,
+  nested = false,
   focused,
   inactive,
   issueLevel,
 }: Props) {
+  /** Open by default: under Newtonian the box holds the phase's ``nu``, which
+      is a headline number rather than a detail, and a model the case has never
+      run would otherwise hide the only box that model has.
+
+      A folded row is the exception: the vertex table and the three
+      marker-point pairs start closed, so the mesh card opens as a handful of
+      one-line rows instead of six boxes and eight corners. */
+  const [open, setOpen] = useState(!param.repeats && !param.collapsible);
   const setEdit = useStore((s) => s.setEdit);
   const setToggle = useStore((s) => s.setToggle);
   const clearEdit = useStore((s) => s.clearEdit);
@@ -66,6 +102,9 @@ export function ParamField({
   const focusId = useStore((s) => s.focusParam);
   const ref = useRef<HTMLDivElement>(null);
   const t = useT();
+  /** Needed for the owned parameters only: the row's own level comes in as a
+      prop, because the panel merges it across the parts of a group. */
+  const issues = useIssueMap();
 
   /**
    * A grouped row renders several params, so everything that used to read
@@ -121,6 +160,152 @@ export function ParamField({
     return e !== undefined ? e : p.value;
   };
   const value = valueOf(param);
+
+  /**
+   * `vertices` and `particles` are *tables* rather than values (see
+   * `Param.repeats`): `value` is one row per matched line, in the order the
+   * file has them, and the panel lists them instead of showing one row of
+   * boxes.
+   *
+   * `fileRows` is what is on disk; the pending table is what the user has
+   * typed.  The two are kept apart on purpose: the edit carries all eight rows
+   * ever pushed, so anything that still equals the file's own number has to be
+   * recognised as untouched and handed back as the file spells it -- otherwise
+   * a case written with `$xco1` for its corners would come out of the panel
+   * with all twenty-four numbers frozen into literals.
+   */
+  const repeats = param.repeats && Array.isArray(value);
+  const fileRows: TripleTable = param.repeats && Array.isArray(param.value)
+    ? (param.value as TripleTable)
+    : [];
+  /** What the table has on screen: the pending one when the user has touched
+      it, else the file's.  Its *length* is the user's business too -- the two
+      buttons at the end add and drop rows -- so everything below reads the
+      count off this rather than off the file. */
+  const displayRows: TripleTable = Array.isArray(value) ? (value as TripleTable) : fileRows;
+
+  /** The row's shape, as the backend declares it: the vertex table's three
+      numbers, or a particle's note plus its eight.  A rule richer than the
+      triple gets one box per column, each under its own label; a triple keeps
+      the axis-lettered box it has always had. */
+  const columns: ParamColumn[] = param.columns ?? [];
+  const perColumn = repeats && columns.length > 3;
+  const isTextColumn = (j: number) => columns[j]?.type === "text";
+
+  /**
+   * The columns in the order the panel draws them.  A free-text column is a
+   * note *about* the numbers beside it, so it belongs after them rather than
+   * in front of the row: the file leads each particle with its `#notes_pN:`
+   * line, but on screen the eight numbers are what is being read.
+   *
+   * A display order only.  `Param.columns` is the order the file spells the
+   * cells in and the writer formats the value by it, so a box that has moved
+   * has to remember which cell it came from.  `sort` is stable, which is what
+   * keeps the numbers among themselves in the file's own order.
+   */
+  const drawnColumns = columns
+    .map((col, j) => ({ col, j }))
+    .sort((a, b) => Number(isTextColumn(a.j)) - Number(isTextColumn(b.j)));
+
+  /** The value typed into one cell, or `null` when its pending value is still
+      the file's own -- i.e. nobody has touched it. */
+  const typedCell = (i: number, j: number): CellValue | null => {
+    const base = fileRows[i]?.[j];
+    const pending = displayRows[i]?.[j];
+    if (pending === undefined || pending === base) return null;
+    return isTextColumn(j) ? String(pending) : Number(pending);
+  };
+
+  /**
+   * One cell of a table, as the panel shows it: the file's number, unless
+   * something pending speaks for it.  Two things can.  A macro whose source has
+   * a pending edit -- the pointer or the domain extent being retyped -- because
+   * the file will go on spelling `$xco1` and so the number it resolves to is
+   * the new one; that is what makes the boxes follow a domain change as you
+   * type, exactly like the derived metrics do.  And a literal typed into this
+   * very cell, which replaces the macro outright.
+   *
+   * The typed literal wins: it is the more specific of the two, and it is what
+   * the writer will actually put in the file.  A text column has no macro to
+   * follow -- a note is not a number -- so only the file and the keyboard can
+   * speak for it.
+   */
+  const cellOf = (i: number, j: number): CellValue => {
+    const typed = typedCell(i, j);
+    if (typed !== null) return typed;
+    if (!isTextColumn(j)) {
+      const src = param.macros?.[i]?.[j];
+      const linked = src ? edits[src] : undefined;
+      if (linked !== undefined && Number.isFinite(Number(linked))) return Number(linked);
+    }
+    const file = fileRows[i]?.[j];
+    return file ?? (isTextColumn(j) ? "" : 0);
+  };
+
+  const shownRow = (i: number): TableRow =>
+    (displayRows[i] ?? []).map((_, j) => cellOf(i, j));
+
+  /**
+   * The table as it should be written: every row the file already has goes back
+   * as the numbers on disk -- which is what tells the writer to leave their
+   * tokens alone -- and every row added since keeps the numbers it was given,
+   * because there is no line for it in the file yet.
+   *
+   * Every control below commits through this rather than through what is on
+   * screen: a box showing a linked `$xco1` has to go back as that row's file
+   * number, or the writer would take the number as a literal and freeze the
+   * macro.
+   */
+  const pendingRows = (): TripleTable =>
+    displayRows.map((row, r) =>
+      r < fileRows.length ? fileRows[r].map((f, c) => typedCell(r, c) ?? f) : [...row],
+    );
+
+  /** One cell of one row, committed as the whole table. */
+  const commitRow = (i: number, next: TableRow) => {
+    const current = shownRow(i);
+    const j = next.findIndex((v, k) => v !== current[k]);
+    if (j < 0) return;
+    const rows = pendingRows();
+    rows[i] = [...(rows[i] ?? [])];
+    rows[i][j] = next[j];
+    setEdit(param.id, rows);
+  };
+
+  /** One more row at the end: a corner at the origin, or a particle starting
+      where the last one does (see `Param.row_seed`) -- a row to move into place
+      rather than one to delete first. */
+  const seedRow = (): TableRow => {
+    const seed = param.row_seed;
+    if (Array.isArray(seed) && seed.length === columns.length) return [...seed];
+    return columns.map((c) => (c.type === "text" ? "" : 0));
+  };
+  const addRow = () => setEdit(param.id, [...pendingRows(), seedRow()]);
+  const removeRow = () => setEdit(param.id, pendingRows().slice(0, -1));
+
+  /** A `text` param's value: the lines, as the textarea spells them. */
+  const textLines: TextLines = param.type === "text" && Array.isArray(value)
+    ? (value as TextLines)
+    : [];
+
+  /**
+   * The owned params that are on screen: the ones the *currently selected*
+   * model defines, plus the ones no model governs (`p.model === null` -- a
+   * phase's density, which sits in the same block and is read under every
+   * model).  Read off the pending value rather than the one on disk, so picking
+   * another model unfolds its coefficients straight away -- before anything is
+   * applied, which is the point of choosing one.
+   */
+  const model = String(value ?? "");
+  const ownedLive = owned.filter((p) => !p.model || p.model === model);
+  /** The model on screen is not the one on disk, so what the file says about
+      these parameters is one Apply out of date. */
+  const switched = !valuesEqual(value, param.value);
+  /** Whether the list below is one the file does not have yet -- either the
+      backend already said so, or the switch above is what will make it so. */
+  const creating = ownedLive.some(
+    (p) => p.status === "create" || (switched && p.status === "inactive"),
+  );
   /** Pending on/off state, still unwritten; `p.enabled` is what is on disk. */
   const enabledOf = (p: Param): boolean => {
     const tog = toggles[p.id];
@@ -144,7 +329,9 @@ export function ParamField({
    */
   const locatableOf = (p: Param): boolean => p.status === "ok" || p.status === "disabled";
   const disabledFor = (p: Param): boolean =>
-    p.toggle ? !enabledOf(p) || !locatableOf(p) : !p.editable || p.readonly;
+    p.toggle
+      ? !enabledOf(p) || !locatableOf(p)
+      : (!p.editable && !(ownerSelected && p.status === "inactive")) || p.readonly;
   const disabled = disabledFor(param);
   /** Nothing to comment or un-comment when the line could not be found at all.
       Per param, because a grouped row switches each of its lines on its own. */
@@ -202,6 +389,16 @@ export function ParamField({
       like `unused` -- the difference is only in what it says. */
   const optionalOf = (p: Param): boolean => p.status === "optional";
 
+  /** A coefficient whose model *is* the one selected but whose line the case
+      does not have.  Ordinary and writable -- the writer adds the line on
+      apply, and under Newtonian there is nothing to add at all -- so the badge
+      has to say "not written yet", never "something is wrong".
+      `ownerSelected` folds in the parameter the case has *not* caught up with
+      yet: the file still names the old model, so the backend called it
+      `inactive`, but the pending switch is exactly what makes it live. */
+  const createOf = (p: Param): boolean =>
+    p.status === "create" || (ownerSelected && p.status === "inactive");
+
   /** Some optional settings still mean something definite when the line is
       gone (a water box with no lower corner starts at the origin).  Then the
       box shows that number -- the backend reports it as `value`, so nothing
@@ -225,6 +422,7 @@ export function ParamField({
   const unused = parts.every(unusedOf);
   const optional = parts.some(optionalOf);
   const settledAbsent = parts.some(settledAbsentOf);
+  const created = !nested && parts.some(createOf);
 
   /**
    * A triple input is three boxes plus the axis letters.  At full width that is
@@ -238,6 +436,9 @@ export function ParamField({
   const compactTriple = triple && param.compact;
   const wideTriple = triple && !param.compact;
   const boxW = compactTriple ? BOX_W_NARROW : BOX_W;
+  /** A block of free text: its box is the whole width of the card, so the row
+      keeps that width too rather than squeezing the box into one column. */
+  const text = param.type === "text";
 
   /**
    * Everything the row used to spell out underneath itself.  A paragraph of
@@ -265,6 +466,7 @@ export function ParamField({
             hi: fmtNum(p.range[1]),
           })
         : "",
+      createOf(p) ? t.t("Not in the file yet; it is written when applied") : "",
       issueLevel ? t.t("Differs from the same quantity in another file") : "",
       unusedOf(p) ? t.t("Unused: this case takes the other particle-creation route") : "",
       settledAbsentOf(p)
@@ -282,31 +484,116 @@ export function ParamField({
 
   const hint = parts.map(hintOf).join("\n\n");
 
+  /**
+   * A row that owns parameters is one control in two boxes: the model to pick,
+   * and the parameters that model is made of in a list underneath.  Unfolded,
+   * the row takes the whole card width -- a strip of four coefficients squeezed
+   * into one column would be a column of unreadable stubs.
+   *
+   * The list is a real sub-tree of `ParamField`s rather than a bespoke summary:
+   * a coefficient is an ordinary parameter with its own box, edit and dirty
+   * state, so it has to behave like one in every respect but position.
+   */
+  const expandable = ownedLive.length > 0 || repeats || param.collapsible;
+  const expanded = expandable && open;
+
+  /**
+   * Whether the row's own boxes live in the fold rather than on the row.  True
+   * for a table (its rows are all underneath) and for a collapsible group (that
+   * is what the flag is for), and it is what the row reads as when closed: the
+   * label, then how many things are inside.
+   */
+  const folded = repeats || param.collapsible;
+  const foldedCount = repeats ? displayRows.length : parts.length;
+
+  /**
+   * A grouped row's boxes: one per part, side by side.  The group is one
+   * quantity written as several lines -- left/right for a min and max, left to
+   * right for x/y/z -- and each box keeps its own id, edit, switch and dirty
+   * state.  The gap widens when the parts are switchable, so that a switch hugs
+   * its own box rather than sitting halfway between two of them.
+   *
+   * A switchable row is its own template -- "a single-column double-value box
+   * with switches": the pair and the box both give up 30% of their width
+   * (`BOX_W_SWITCH`, and `compact` below), which is what keeps one row in one
+   * column instead of having the boxes drop under the label.
+   */
+  const groupBoxes = (
+    <div className={`flex ${groupedToggle ? "gap-2" : "gap-1"}`}>
+      {parts.map((p) => (
+        <span key={p.id} className="flex items-center gap-1">
+          {p.toggle && switchFor(p, groupedToggle)}
+          <Input
+            param={p}
+            value={valueOf(p)}
+            disabled={disabledFor(p)}
+            onCommit={(v) => setEdit(p.id, v)}
+            outOfRange={outOfRangeFor(p)}
+            width={groupedToggle ? BOX_W_SWITCH : BOX_W_NARROW}
+            focused={focusId === p.id}
+          />
+        </span>
+      ))}
+    </div>
+  );
+
+  /**
+   * A collapsible group's boxes, as its fold lists them: one per part, each
+   * under the name the file gives that line.  The panel is showing the
+   * definitions themselves here -- the six macros the mesh's corners are built
+   * from -- so the label is the keyword the corner table resolves through
+   * (`xco1` ...), not the panel's own name for the quantity ("Domain x max"),
+   * which would leave the reader to work out which macro is which.
+   */
+  const markerBoxes = (
+    <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-4">
+      {parts.map((p) => (
+        <span key={p.id} className="flex items-center gap-1.5">
+          <span className="w-9 shrink-0 truncate font-mono text-[10.5px] leading-none text-ink-4">
+            {p.key}
+          </span>
+          <Input
+            param={p}
+            value={valueOf(p)}
+            disabled={disabledFor(p)}
+            onCommit={(v) => setEdit(p.id, v)}
+            outOfRange={outOfRangeFor(p)}
+            width={BOX_W_NARROW}
+            focused={focusId === p.id}
+          />
+        </span>
+      ))}
+    </div>
+  );
+
+  /** The dot that says "this row differs from the file", and undoes it. */
+  const dot = dirty ? (
+    <button
+      onClick={() => parts.forEach((p) => clearEdit(p.id))}
+      title={t.t("On disk: {value} · click to undo this change", {
+        value: parts.map((p) => String(p.value)).join(" / "),
+      })}
+      className="shrink-0 text-[10px] leading-none text-dirty transition hover:text-ink"
+    >
+      ●
+    </button>
+  ) : (
+    <span className="w-[10px] shrink-0" />
+  );
+
   return (
     <div
       ref={ref}
       title={hint}
       className={`flex items-center gap-2 rounded-md border px-2 py-1.5 transition ${
-        wideTriple ? "lg:col-span-2" : ""
-      } ${
+        nested ? "" : "flex-wrap"
+      } ${expanded || text ? "lg:col-span-full" : wideTriple ? "lg:col-span-2" : ""} ${
         focused
           ? "border-accent/60 bg-accent/[0.07] shadow-[0_8px_24px_-12px_rgba(53,198,212,0.6)] ring-1 ring-accent/30"
           : "border-transparent hover:border-line hover:bg-wash-2"
       } ${inactive ? "opacity-45" : ""}`}
     >
-      {dirty ? (
-        <button
-          onClick={() => parts.forEach((p) => clearEdit(p.id))}
-          title={t.t("On disk: {value} · click to undo this change", {
-            value: parts.map((p) => String(p.value)).join(" / "),
-          })}
-          className="shrink-0 text-[10px] leading-none text-dirty transition hover:text-ink"
-        >
-          ●
-        </button>
-      ) : (
-        <span className="w-[10px] shrink-0" />
-      )}
+      {dot}
 
       {/* Unit hugs the label, not the input: `Domain x min m` reads as a unit,
           `Domain x min ......... m` reads as a stray glyph in the gap.
@@ -335,8 +622,11 @@ export function ParamField({
       {param.toggle && !grouped && switchFor(param)}
 
       {/* `Derived` rather than `Read-only` for a computed param: the difference
-          that matters is not that it is locked but that it moves on its own. */}
-      {parts.every((p) => !p.toggle && (!p.editable || p.readonly)) && (
+          that matters is not that it is locked but that it moves on its own.
+          Asked through `disabledFor` rather than off `editable`, so a
+          coefficient whose model is being switched to in this same write is
+          not badged as locked while its box is open. */}
+      {parts.every((p) => !p.toggle && disabledFor(p)) && (
         <span
           className="shrink-0 rounded bg-panel-3 px-1 py-px text-[9.5px] text-ink-4"
           title={param.product_of.length ? param.help : t.t("Read-only; this parameter is never written")}
@@ -372,6 +662,14 @@ export function ParamField({
           {t.t("Optional")}
         </span>
       )}
+      {created && (
+        <span
+          className="shrink-0 rounded border border-accent/40 bg-accent/10 px-1 py-px text-[9.5px] text-accent"
+          title={t.t("Not in the file yet; it is written when applied")}
+        >
+          {t.t("Will be created when you apply")}
+        </span>
+      )}
       {unresolved && (
         <span
           className="shrink-0 rounded border border-error/40 bg-error/10 px-1 py-px text-[9.5px] text-error"
@@ -388,46 +686,260 @@ export function ParamField({
         />
       )}
 
-      {grouped ? (
-        // One box per part, side by side: the group is one quantity written as
-        // several lines -- left/right for a min and max, left to right for
-        // x/y/z -- and each box keeps its own id, edit, switch and dirty state.
-        // The gap widens when the parts are switchable, so that a switch hugs
-        // its own box rather than sitting halfway between two of them.
+      {!folded &&
+        (grouped ? (
+          groupBoxes
+        ) : text ? (
+          <TextArea
+            value={textLines}
+            disabled={disabled}
+            onCommit={(v) => setEdit(param.id, v)}
+          />
+        ) : (
+          <Input
+            param={param}
+            value={value}
+            disabled={disabled}
+            onCommit={(v) => setEdit(param.id, v)}
+            outOfRange={outOfRange}
+            // Only a triple takes the card's width: for anything else the
+            // default is the single box, whatever the neighbouring rows happen
+            // to do -- a nested cell included: its box stays the width of every
+            // other box in the card, so a column of them lines up with the rows
+            // above.
+            width={triple ? boxW : undefined}
+          />
+        ))}
+
+      {expandable && (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          title={
+            repeats
+              ? t.t("The rows of this table, in the order the file lists them")
+              : param.collapsible
+                ? t.t("The macros the mesh's corners are built from; unfold to list them")
+                : t.t("The parameters the selected model is written with")
+          }
+          className={`flex shrink-0 items-center gap-1 rounded border px-1.5 py-1 text-[10.5px] leading-none transition ${
+            open
+              ? "border-accent/50 bg-accent/10 text-accent"
+              : "border-line text-ink-3 hover:bg-panel-2"
+          }`}
+        >
+          {repeats
+            ? t.t("{n} rows", { n: foldedCount })
+            : param.collapsible
+              ? t.t("{n} marker points", { n: foldedCount })
+              : t.t("Parameters")}
+          <IconChevron
+            width={10}
+            height={10}
+            className={`transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      )}
+
+      {expanded && (
+        // Three things unfold here, and the row is one line in all of them:
         //
-        // A switchable row is its own template -- "a single-column double-value
-        // box with switches": the pair and the box both give up 30% of their
-        // width (`BOX_W_SWITCH`, and `compact` below), which is what keeps one
-        // row in one column instead of having the boxes drop under the label.
-        <div className={`flex ${groupedToggle ? "gap-2" : "gap-1"}`}>
-          {parts.map((p) => (
-            <span key={p.id} className="flex items-center gap-1">
-              {p.toggle && switchFor(p, groupedToggle)}
-              <Input
-                param={p}
-                value={valueOf(p)}
-                disabled={disabledFor(p)}
-                onCommit={(v) => setEdit(p.id, v)}
-                outOfRange={outOfRangeFor(p)}
-                width={groupedToggle ? BOX_W_SWITCH : BOX_W_NARROW}
-                focused={focusId === p.id}
-              />
-            </span>
-          ))}
+        // * the vertex table, one line per corner;
+        // * a collapsible group's boxes, which are hidden while it is closed --
+        //   the same set the row would have carried, just one line down, and
+        //   each under the keyword the file spells it with;
+        // * the coefficients of the model picked above -- four to a line, which
+        //   is what a non-Newtonian model has: the four read as one group
+        //   rather than as four full-width rows with the label at one end and
+        //   its box at the other.
+        //
+        // The note in the third case is the list's, not each cell's: a cell is
+        // a quarter of the card wide, and a badge beside the label there would
+        // push the label out entirely -- so one line says for the four of them
+        // what four badges would have said.
+        <div className="w-full rounded border-l-2 border-accent/25 pl-2">
+          {creating && (
+            <div className="pb-0.5 text-[9.5px] leading-tight text-accent">
+              {t.t("Will be created when you apply")}
+            </div>
+          )}
+          {param.collapsible ? (
+            markerBoxes
+          ) : repeats ? (
+            // One row of the table per line, in the order the file has them --
+            // so the index in front is the one the block's own `hex` and
+            // `patches` lines refer to, or the particle's own number.  It is a
+            // fact about the line rather than a setting, so it is a plain label
+            // and not a box: the index column is the gutter the buttons below
+            // share.
+            //
+            // A rule of the triple's own shape keeps the one box it has always
+            // had.  A wider row -- a particle is a note plus eight numbers --
+            // gets one box per column instead, each under the name the backend
+            // gives it, on a line of its own.
+            <div
+              className={
+                perColumn
+                  ? "grid grid-cols-1 gap-y-0.5"
+                  : "grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-4"
+              }
+            >
+              {displayRows.map((_, i) => (
+                <span
+                  key={i}
+                  className={`flex items-center gap-1.5 ${perColumn ? "flex-wrap" : ""}`}
+                >
+                  <span className="w-4 shrink-0 text-right font-mono text-[10.5px] leading-none text-ink-4">
+                    {i}
+                  </span>
+                  {perColumn ? (
+                    drawnColumns.map(({ col, j }) => (
+                      <span key={col.name} className="flex items-center gap-1">
+                        <span className="shrink-0 font-mono text-[10.5px] leading-none text-ink-4">
+                          {t.t(col.label)}
+                        </span>
+                        <Cell
+                          col={col}
+                          value={shownRow(i)[j]}
+                          disabled={disabled}
+                          width={BOX_W_NARROW}
+                          onCommit={(v) =>
+                            commitRow(
+                              i,
+                              shownRow(i).map((x, k) => (k === j ? v : x)),
+                            )
+                          }
+                        />
+                      </span>
+                    ))
+                  ) : (
+                    <Input
+                      param={param}
+                      value={shownRow(i) as TripleValue}
+                      disabled={disabled}
+                      outOfRange={false}
+                      width={BOX_W_NARROW}
+                      onCommit={(v) => commitRow(i, v as TableRow)}
+                    />
+                  )}
+                </span>
+              ))}
+              {/* The table is only ever grown and trimmed at the end, which is
+                  why these two are here rather than on a row of their own: they
+                  follow the rows, so they land in the last one whatever the
+                  count, and they read left to right in the order they act. */}
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 shrink-0" />
+                <button
+                  onClick={addRow}
+                  disabled={disabled}
+                  title={t.t("Add a row at the end of the table")}
+                  className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
+                >
+                  {t.t("Add")}
+                </button>
+                <button
+                  onClick={removeRow}
+                  disabled={disabled || displayRows.length === 0}
+                  title={t.t("Take the last row off the end of the table")}
+                  className="shrink-0 rounded border border-line px-1.5 py-1 text-[10.5px] leading-none text-ink-3 transition enabled:hover:bg-panel-2 enabled:hover:text-ink-2 disabled:opacity-40"
+                >
+                  {t.t("Remove last")}
+                </button>
+              </span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 xl:grid-cols-4">
+              {ownedLive.map((p) => (
+                <ParamField
+                  key={p.id}
+                  param={p}
+                  ownerSelected={switched}
+                  nested
+                  focused={focusId === p.id}
+                  inactive={false}
+                  issueLevel={issues[p.id] ?? null}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      ) : (
-        <Input
-          param={param}
-          value={value}
-          disabled={disabled}
-          onCommit={(v) => setEdit(param.id, v)}
-          outOfRange={outOfRange}
-          // Only a triple takes the card's width: for anything else the default
-          // is the single box, whatever the neighbouring rows happen to do.
-          width={triple ? boxW : undefined}
-        />
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+/** One cell of a table row whose columns are not the triple's own.
+ *
+ * The column carries its own type, so the box follows from the column rather
+ * than from the parameter: a note is a line of text, a diameter is a number.
+ */
+function Cell({
+  col,
+  value,
+  disabled,
+  width,
+  onCommit,
+}: {
+  col: ParamColumn;
+  value: CellValue | undefined;
+  disabled: boolean;
+  width: string;
+  onCommit: (v: CellValue) => void;
+}) {
+  if (col.type === "text") {
+    return (
+      <StringBox
+        value={String(value ?? "")}
+        disabled={disabled}
+        onCommit={onCommit}
+      />
+    );
+  }
+  return (
+    <NumberBox
+      value={Number(value ?? 0)}
+      integer={col.type === "int"}
+      disabled={disabled}
+      outOfRange={false}
+      width={width}
+      onCommit={onCommit}
+    />
+  );
+}
+
+/**
+ * A `text` param: the lines of the particle block's own comment, one per line.
+ *
+ * The block ends at a blank line, so a blank one here would take the particles
+ * with it; the backend refuses the edit rather than writing it, and the box is
+ * a textarea rather than a list of inputs because the lines are prose.
+ */
+function TextArea({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: TextLines;
+  disabled: boolean;
+  onCommit: (v: TextLines) => void;
+}) {
+  const text = value.join("\n");
+  const [draft, setDraft] = useState(text);
+  useEffect(() => setDraft(text), [text]);
+  return (
+    <textarea
+      disabled={disabled}
+      value={draft}
+      rows={Math.min(8, Math.max(2, text.split("\n").length))}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const next = draft.split("\n");
+        if (!valuesEqual(next, value)) onCommit(next);
+      }}
+      className="w-full resize-y rounded border border-line bg-field px-2 py-1 font-mono text-[12px] leading-snug text-ink transition focus:border-accent focus:outline-none disabled:opacity-60"
+    />
   );
 }
 

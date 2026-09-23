@@ -171,7 +171,7 @@ function Placeholder({ loading }: { loading: boolean }) {
           <p className="max-w-md text-center text-[11px] leading-relaxed text-ink-4">
             {t.t("A case needs a")} <code className="font-mono">CFD/system/controlDict</code>
             {t.t(
-              ", anywhere on disk. If nothing here matches, browse to one or type its path under Open project in the top bar.",
+              ", anywhere on disk. If nothing here matches, browse to one or type its path under File in the top bar.",
             )}
           </p>
         </>

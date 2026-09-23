@@ -110,6 +110,20 @@ class Ctx:
         except (TypeError, ValueError):
             return None
 
+    def rows(self, pid: str) -> Optional[List[List]]:
+        """The rows of a ``repeats`` table, in file order.
+
+        ``None`` for a value that is not one -- including a triple, which is a
+        list of numbers rather than a list of rows, so the two shapes cannot be
+        confused by accident.
+        """
+        value = self.values.get(pid)
+        if not isinstance(value, (list, tuple)) or not value:
+            return None
+        if not all(isinstance(row, (list, tuple)) for row in value):
+            return None
+        return [list(row) for row in value]
+
     def live(self, pid: str) -> bool:
         """False for a toggle param whose line has been commented out."""
         return self.enabled.get(pid, True)
@@ -197,6 +211,42 @@ def _close(a: Optional[float], b: Optional[float], tol: float = 1e-9) -> bool:
     return abs(a - b) <= tol * max(1.0, abs(a), abs(b))
 
 
+#: The DEM block's particle table, by the column names ``profiles`` gives it.
+PARTICLES = "dem.particles"
+
+
+def _particles(ctx: Ctx) -> List[Dict[str, Any]]:
+    """Every particle of the single-sphere route, one dict per row.
+
+    The keys are the table's own column names (``valx``/``vald``/``valrho``
+    ...), with a 1-based ``n`` added so a message can say *which* particle it
+    is about -- the block is renumbered by position on every write, so the
+    position is the only name a particle has.
+    """
+    rows = ctx.rows(PARTICLES)
+    if not rows:
+        return []
+    r = ctx.resolved.get(PARTICLES)
+    names = r.param.row_groups if r else []
+    out: List[Dict[str, Any]] = []
+    for i, row in enumerate(rows, start=1):
+        item = dict(zip(names, row))
+        item["n"] = i
+        out.append(item)
+    return out
+
+
+def _pnum(p: Dict[str, Any], name: str) -> Optional[float]:
+    try:
+        return float(p[name])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _plabel(p: Dict[str, Any]) -> str:
+    return f"particle {p['n']}"
+
+
 # ---------------------------------------------------------------- metrics
 
 
@@ -207,7 +257,11 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
     y1, y2 = ctx.num("mesh.yco1"), ctx.num("mesh.yco2")
     z1, z2 = ctx.num("mesh.zco1"), ctx.num("mesh.zco2")
     cells = ctx.triple("mesh.cells")
-    diameter = ctx.num("dem.diameter")
+    particles = _particles(ctx)
+    # The diameter the *worst* particle has: cells/diameter is a resolution
+    # verdict, so the smallest particle is the one it has to be judged by.
+    diameters = [d for d in (_pnum(p, "vald") for p in particles) if d]
+    diameter = min(diameters) if diameters else None
 
     if None in (x1, x2, y1, y2, z1, z2) or cells is None:
         metrics.append(metric("mesh.size", "Domain size", None, status=WARN,
@@ -265,20 +319,32 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
     if diameter and dx:
         per_diameter = diameter / dx
         level = OK if per_diameter >= 5 else (INFO if per_diameter >= 3 else WARN)
+        worst = next(
+            (p for p in particles if _pnum(p, "vald") == diameter), None
+        )
+        suffix = ""
+        if len(diameters) > 1:
+            suffix = f" ({_plabel(worst)} of {len(diameters)}; the smallest decides)"
         metrics.append(metric(
             "mesh.cells_per_diameter", "cells / particle diameter",
             f"{per_diameter:.2f}", "cells",
             status=level,
             message="" if level == OK else
             "The particle diameter spans too few cells; immersed-boundary forces "
-            "will be dominated by discretisation noise",
+            "will be dominated by discretisation noise" + suffix,
             formula="diameter / Δx",
-            sources=["dem.diameter", "mesh.cells", "mesh.xco1", "mesh.xco2"],
+            sources=["dem.particles", "mesh.cells", "mesh.xco1", "mesh.xco2"],
         ))
 
-        center = ctx.triple("dem.pos")
-        if center:
-            radius = diameter / 2.0
+        # The span is per particle -- each sits somewhere of its own -- and the
+        # card reports the worst of them, named, since only one number fits.
+        widest = None
+        for p in particles:
+            center = [_pnum(p, a) for a in ("valx", "valy", "valz")]
+            dd = _pnum(p, "vald") or diameter
+            if None in center:
+                continue
+            radius = dd / 2.0
             spans: Dict[str, int] = {}
             # Axes that landed on the same placement share one clause; the
             # sentence is the *reason* the spans are not simply diameter/Δ, and
@@ -296,21 +362,28 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
                 right = math.floor((coord + radius - lo) / delta)
                 spans[axis] = right - left + 1
                 placement.setdefault(where, []).append(f"{axis}={_fmt(coord, 4)}")
-
             ordered = [axis for axis in "xyz" if axis in spans]
-            if ordered:
-                metrics.append(metric(
-                    "mesh.span", "Cells spanned by the diameter",
-                    " × ".join(str(spans[a]) for a in ordered), "cells",
-                    detail=" · ".join(f"{a} {spans[a]}" for a in ordered) + " cells",
-                    status=OK if all(spans[a] <= per_diameter + 3 for a in ordered) else WARN,
-                    message="centre " + "; ".join(
-                        f"{', '.join(names)} on {where}"
-                        for where, names in placement.items()
-                    ),
-                    formula="floor((c+r-lo)/Δ) - floor((c-r-lo)/Δ) + 1",
-                    sources=["dem.pos", "dem.diameter", "mesh.cells"],
-                ))
+            if not ordered:
+                continue
+            here = (max(spans[a] for a in ordered), p, spans, ordered, placement)
+            if widest is None or here[0] > widest[0]:
+                widest = here
+
+        if widest is not None:
+            _, p, spans, ordered, placement = widest
+            who = f"{_plabel(p)} of {len(particles)}; " if len(particles) > 1 else ""
+            metrics.append(metric(
+                "mesh.span", "Cells spanned by the diameter",
+                " × ".join(str(spans[a]) for a in ordered), "cells",
+                detail=" · ".join(f"{a} {spans[a]}" for a in ordered) + " cells",
+                status=OK if all(spans[a] <= per_diameter + 3 for a in ordered) else WARN,
+                message=who + "centre " + "; ".join(
+                    f"{', '.join(names)} on {where}"
+                    for where, names in placement.items()
+                ),
+                formula="floor((c+r-lo)/Δ) - floor((c-r-lo)/Δ) + 1",
+                sources=["dem.particles", "mesh.cells"],
+            ))
 
     # --- coupling period --------------------------------------------------
     dem_dt = ctx.num("dem.timestep")
@@ -403,20 +476,27 @@ def compute_metrics(ctx: Ctx) -> List[dict]:
         ))
 
     # --- particle placement ----------------------------------------------
-    center = ctx.triple("dem.pos")
-    if center and sf_zmax is not None:
-        submerged = center[2] < sf_zmax
+    wet: List[Dict[str, Any]] = []
+    for p in particles:
+        z = _pnum(p, "valz")
+        if z is not None:
+            p["z"] = z
+            wet.append(p)
+    if wet and sf_zmax is not None:
+        high = [p for p in wet if p["z"] >= sf_zmax]
         metrics.append(metric(
             "dem.submerged", "Initial state",
-            "below the water surface" if submerged else "above the water surface",
-            status=OK if submerged else INFO,
-            message=""
-            if submerged
-            else f"Sphere centre z={_fmt(center[2], 4)} is above the initial water "
-                 f"surface z={_fmt(sf_zmax, 4)}; the particle will fall through air "
-                 "into the water",
+            "below the water surface" if not high else
+            ("above the water surface" if len(high) == len(wet)
+             else "partly above the water surface"),
+            status=OK if not high else INFO,
+            message="" if not high else "; ".join(
+                f"{_plabel(p)} centre z={_fmt(p['z'], 4)} is above the initial water "
+                f"surface z={_fmt(sf_zmax, 4)}"
+                for p in high
+            ) + "; it will fall through air into the water",
             formula="pos.z < setFields.zmax",
-            sources=["dem.pos", "mesh.sf.zmax"],
+            sources=["dem.particles", "mesh.sf.zmax"],
         ))
 
     # --- parallel layout --------------------------------------------------
@@ -577,60 +657,83 @@ def compute_consistency(ctx: Ctx) -> List[dict]:
             param_ids=["dem.timestep", "dem.couple_every", "run.deltaT"],
         ))
 
-    # --- particle inside the DEM region ----------------------------------
-    center = ctx.triple("dem.pos")
-    if center and all(ctx.num(pid) is not None for pid in ("dem.xmin", "dem.ymin", "dem.zmin")):
-        lo = [ctx.num("dem.xmin"), ctx.num("dem.ymin"), ctx.num("dem.zmin")]
-        hi = [ctx.num("dem.xmax"), ctx.num("dem.ymax"), ctx.num("dem.zmax")]
+    # --- particles inside the DEM region ---------------------------------
+    # Per particle, since each sits somewhere of its own.  A particle whose
+    # coordinates are not readable is skipped rather than reported: the table
+    # rule that could not read it is already an unresolved parameter, and one
+    # block's rule failing should not put a second, louder error on top.
+    placed: List[Dict[str, Any]] = []
+    for p in _particles(ctx):
+        center = [_pnum(p, a) for a in ("valx", "valy", "valz")]
+        if None in center:
+            continue
+        p["pos"] = center
+        placed.append(p)
+    lo = [ctx.num("dem.xmin"), ctx.num("dem.ymin"), ctx.num("dem.zmin")]
+    hi = [ctx.num("dem.xmax"), ctx.num("dem.ymax"), ctx.num("dem.zmax")]
+    if placed and all(v is not None for v in lo + hi):
         outside = [
-            f"{axis}={_fmt(c)} ∉ [{_fmt(a)}, {_fmt(b)}]"
-            for axis, c, a, b in zip("xyz", center, lo, hi)
-            if a is not None and b is not None and not (a <= c <= b)
+            f"{_plabel(p)}: " + ", ".join(
+                f"{axis}={_fmt(c)} ∉ [{_fmt(a)}, {_fmt(b)}]"
+                for axis, c, a, b in zip("xyz", p["pos"], lo, hi)
+                if not (a <= c <= b)
+            )
+            for p in placed
+            if any(not (a <= c <= b) for c, a, b in zip(p["pos"], lo, hi))
         ]
         out.append(check(
             "dem.inside", WARN if outside else OK,
-            "Particle starts outside the DEM region" if outside
-            else "Particle starts inside the DEM region",
+            "Particles start outside the DEM region" if outside
+            else "Particles start inside the DEM region",
             "; ".join(outside) if outside else
-            f"({', '.join(_fmt(c, 4) for c in center)}) lies inside the region",
-            sources=[_src(ctx, "dem.pos"), _src(ctx, "dem.xmin"), _src(ctx, "dem.xmax"),
+            f"All {len(placed)} particle(s) lie inside the region",
+            sources=[_src(ctx, PARTICLES), _src(ctx, "dem.xmin"), _src(ctx, "dem.xmax"),
                      _src(ctx, "dem.ymin"), _src(ctx, "dem.ymax"),
                      _src(ctx, "dem.zmin"), _src(ctx, "dem.zmax")],
-            param_ids=["dem.pos"],
+            param_ids=[PARTICLES],
         ))
 
-        diameter = ctx.num("dem.diameter")
-        if diameter:
-            radius = diameter / 2.0
-            clipped = [
+        clipped: List[str] = []
+        radii: List[float] = []
+        for p in placed:
+            radius = _pnum(p, "vald")
+            if not radius:
+                continue
+            radii.append(radius / 2.0)
+            axes = [
                 axis
-                for axis, c, a, b in zip("xyz", center, lo, hi)
-                if a is not None and b is not None and (c - radius < a or c + radius > b)
+                for axis, c, a, b in zip("xyz", p["pos"], lo, hi)
+                if c - radius / 2.0 < a or c + radius / 2.0 > b
             ]
+            if axes:
+                clipped.append(f"{_plabel(p)} ({', '.join(axes)})")
+        if radii:
             out.append(check(
                 "dem.wall_clearance", WARN if clipped else OK,
-                "Particle penetrates the wall" if clipped
-                else "Particle does not penetrate the wall",
-                f"The particle radius {_fmt(radius, 4)} m pushes {', '.join(clipped)} "
-                "beyond the region boundary; the initial configuration already "
-                "overlaps wall/gran" if clipped else
-                f"Radius {_fmt(radius, 4)} m leaves clearance in every direction",
-                sources=[_src(ctx, "dem.pos"), _src(ctx, "dem.diameter")],
-                param_ids=["dem.pos", "dem.diameter"],
+                "Particles penetrate the wall" if clipped
+                else "Particles do not penetrate the wall",
+                "The particle radius pushes " + ", ".join(clipped) + " beyond the "
+                "region boundary; the initial configuration already overlaps wall/gran"
+                if clipped else
+                f"The largest radius {_fmt(max(radii), 4)} m leaves clearance in every direction",
+                sources=[_src(ctx, PARTICLES)],
+                param_ids=[PARTICLES],
             ))
 
-    # --- particle vs initial water level ---------------------------------
-    if center and level is not None:
-        submerged = center[2] < level
+    # --- particles vs initial water level --------------------------------
+    if placed and level is not None:
+        wet = [p for p in placed if p["pos"][2] >= level]
         out.append(check(
-            "dem.submerged", OK if submerged else INFO,
-            "Particle and initial water surface",
-            f"Sphere centre z={_fmt(center[2], 4)} is below the initial water surface {_fmt(level, 4)}"
-            if submerged else
-            f"Sphere centre z={_fmt(center[2], 4)} is above the initial water surface "
-            f"{_fmt(level, 4)}; the particle will pass through air before entering the water",
-            sources=[_src(ctx, "dem.pos"), _src(ctx, "mesh.sf.zmax")],
-            param_ids=["dem.pos", "mesh.sf.zmax"],
+            "dem.submerged", OK if not wet else INFO,
+            "Particles and initial water surface",
+            "; ".join(
+                f"{_plabel(p)} centre z={_fmt(p['pos'][2], 4)} is above the initial "
+                f"water surface {_fmt(level, 4)}"
+                for p in wet
+            ) + "; it will pass through air before entering the water" if wet else
+            f"Every particle centre is below the initial water surface {_fmt(level, 4)}",
+            sources=[_src(ctx, PARTICLES), _src(ctx, "mesh.sf.zmax")],
+            param_ids=[PARTICLES, "mesh.sf.zmax"],
         ))
 
     # --- adaptive time step makes its own controls inert ------------------

@@ -7,7 +7,9 @@ export type ParamType =
   | "string"
   | "enum"
   | "float3"
-  | "int3";
+  | "int3"
+  /** Free-form lines of text -- the particle block's own comments. */
+  | "text";
 
 export type ParamStatus =
   | "ok"
@@ -23,11 +25,42 @@ export type ParamStatus =
   /** An optional setting (see `Param.optional`) this case leaves out; the
       solver has a default for it, so there is nothing to fix and nothing to
       write. */
-  | "optional";
+  | "optional"
+  /** A model-owned parameter (see `Param.owner`) whose owner *does* select it
+      but whose line this case does not have: editable, valued from the seed,
+      and written as a new line when applied. */
+  | "create"
+  /** A model-owned parameter the owner does not select (`owner` names another
+      model): read, but not part of this case and not writable. */
+  | "inactive";
 
 export type Scalar = number | string | boolean;
 export type TripleValue = [number, number, number];
-export type ParamValue = Scalar | TripleValue | null;
+/** One cell of a table row: a number, or the text of a `text` column. */
+export type CellValue = number | string;
+/** One row of a `repeats` table: one entry per column (see `Param.columns`),
+    which for the triple-shaped tables is the triple it has always been. */
+export type TableRow = CellValue[];
+/** A `repeats` param's value: one row per matched line, in file order. */
+export type TripleTable = TableRow[];
+/** A `text` param's value: one entry per line, as the file spells it. */
+export type TextLines = string[];
+export type ParamValue =
+  | Scalar
+  | TripleValue
+  | TableRow
+  | TripleTable
+  | TextLines
+  | null;
+
+/** One column of a `repeats` table's row, as the writer will format it. */
+export interface ParamColumn {
+  name: string;
+  type: ParamType;
+  /** What the panel prints above the column; also the i18n key. */
+  label: string;
+  unit: string;
+}
 
 export interface SourceRef {
   file: string;
@@ -61,6 +94,11 @@ export interface Param {
       scalar, one source per component for a triple. The panel shows it read-only
       and the backend re-syncs the line on every write. */
   product_of: string[];
+  /** The keyword the line is anchored on -- what the file calls this parameter
+      (`xco1`), which is also the name a macro goes by. Where a folded row lists
+      its parts, this is the label each box gets: the panel is showing the
+      definitions themselves rather than the panel's own name for them. */
+  key: string;
   /** The rest of a set of sibling lines shown on one row (the min and max of one
       domain extent, the x/y/z of one decomposition): the panel folds the named
       params into this one's row and skips rendering them on their own.
@@ -72,10 +110,42 @@ export interface Param {
       The point is that the last of the three boxes then lines up with the single
       box of the rows above it. */
   compact: boolean;
+  /** The row's boxes sit behind a fold: until it is opened the row is its
+      label and a count (see `Param.collapsible`). Display-only, and it folds
+      the whole group -- the row itself plus its `partners`. */
+  collapsible: boolean;
+  /** The rule matches a *list*: `value` is a table of triples, one row per
+      matched line, rather than one triple. The panel renders one row of boxes
+      per line instead of a single row. */
+  repeats: boolean;
+  /** For a `repeats` param, the parameter each component's token came from --
+      `macros[row][axis]`, or `null` where the file spells a literal number.
+      This is what carries a pending edit of a source (a domain extent) into a
+      row the user is not editing. `null` for every other param. */
+  macros: (string | null)[][] | null;
+  /** For a `repeats` param: every column of a row, across all the lines the
+      row is written on (see `Param.row_lines` in the backend).  The panel
+      labels and types each box from this rather than assuming the triple's own
+      x/y/z.  Empty for every other param. */
+  columns: ParamColumn[];
+  /** For a `repeats` param: what the Add button writes into a new row.  The
+      vertex table starts a corner at the origin; the particle table starts one
+      where the last particle is. */
+  row_seed: TableRow | null;
   /** The line can be commented out to switch it off (see `enabled`). */
   toggle: boolean;
   /** For a toggle param: whether its line is live. Always true otherwise. */
   enabled: boolean;
+  /** The parameter that decides whether this one is live at all, and the value
+      of it under which it applies (`null` for an ordinary parameter).  The
+      panel hangs such a parameter off its owner's row instead of giving it one
+      of its own -- see `ParamField`'s `owned`. */
+  owner: string | null;
+  /** The model `owner` has to name for this parameter to apply. */
+  model: string | null;
+  /** The `<Model>Coeffs` sub-dictionary this parameter lives in, `null` when it
+      is written straight into the block above. */
+  block: string | null;
   reason: string;
   matches: number;
   source: SourceRef;
@@ -320,6 +390,6 @@ export interface SavedFile {
     state was flipped, independently of whether the value also changed. */
 export interface Edit {
   id: string;
-  value: Scalar | TripleValue;
+  value: ParamValue;
   enabled?: boolean;
 }

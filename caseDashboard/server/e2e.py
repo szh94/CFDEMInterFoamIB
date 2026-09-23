@@ -44,6 +44,20 @@ DEM_REL = "DEM/in.liggghts_run"
 
 PORT = backend.PORT + 2
 
+#: The one particle row of ``two_phase_sphere_settling``, as ``dem.particles``
+#: reads it: note, x, y, z, diameter, density, vx, vy, vz.  Spelled out because
+#: a table value is a whole row, and a preview/apply that moved a cell has to
+#: send the rest of it back unchanged.
+PARTICLE_ROW = ["single sphere", 0.05, 0.05, 0.12, 0.0167, 1250.0, 0.0, 0.0, 0.0]
+
+
+def particle_edit(diameter: float) -> dict:
+    """An edit of the diameter cell, carrying the row it lives in."""
+    row = list(PARTICLE_ROW)
+    row[4] = diameter
+    return {"id": "dem.particles", "value": [row]}
+
+
 _results: List[Tuple[str, bool, str]] = []
 
 
@@ -118,7 +132,32 @@ def run() -> None:
 
 def _read(api: Client) -> None:
     payload = api.get(f"/api/case?path={CASE_REL}")
-    t("every parameter resolved", len(payload["params"]) == 105, len(payload["params"]))
+    t("every parameter resolved", len(payload["params"]) == 144, len(payload["params"]))
+    # The `vertices` rule is the one that is a *table* rather than a value, so
+    # what is worth pinning over HTTP is the three things that make it one: the
+    # flag the panel branches on, the coordinates themselves -- resolved through
+    # the macros at the top of the file, not the `$xco1` the file spells -- and
+    # the parameter each component came from, which is how an edit of the domain
+    # extent reaches a row the panel is not touching.
+    verts = next(p for p in payload["params"] if p["id"] == "mesh.vertices")
+    t(
+        "the blockMeshDict vertex table arrives as eight rows of resolved coordinates",
+        verts["type"] == "float3"
+        and verts["repeats"] is True
+        and verts["value"]
+        == [
+            [0.0, 0.0, 0.0],
+            [0.0, 0.1, 0.0],
+            [0.0, 0.0, 0.2],
+            [0.0, 0.1, 0.2],
+            [0.1, 0.0, 0.0],
+            [0.1, 0.1, 0.0],
+            [0.1, 0.0, 0.2],
+            [0.1, 0.1, 0.2],
+        ]
+        and verts["macros"][0] == ["mesh.xco1", "mesh.yco1", "mesh.zco1"],
+        (verts["type"], verts["repeats"], verts["value"], verts["macros"]),
+    )
     t(
         "panel is fluid / particle / coupling / steps",
         [g["id"] for g in payload["groups"]] == ["fluid", "particle", "coupling", "steps"],
@@ -152,31 +191,87 @@ def _read(api: Client) -> None:
     single = [
         p
         for p in payload["params"]
-        if p["id"] in ("dem.pos", "dem.diameter", "dem.density", "dem.velocity")
+        if p["id"] in ("dem.zone_notes", "dem.particles")
     ]
     t(
         "single-sphere case has no unrecognized parameters and its single-particle ones stay writable",
         payload["recognition"]["unrecognized"] == []
-        and len(single) == 4
+        and len(single) == 2
         and all(p["status"] == "ok" and p["editable"] for p in single),
         payload["recognition"]["unrecognized"] or [p["id"] for p in single if not p["editable"]],
+    )
+    # The particle block arrives as a note line plus a one-row table spread over
+    # three lines, each column typed and labelled for the panel's own boxes.
+    notes = next(p for p in payload["params"] if p["id"] == "dem.zone_notes")
+    particles = next(p for p in payload["params"] if p["id"] == "dem.particles")
+    t(
+        "the particle block arrives as its notes plus one row per particle",
+        notes["type"] == "text"
+        and notes["value"] == ["create single partciles"]
+        and particles["repeats"] is True
+        and particles["value"]
+        == [["single sphere", 0.05, 0.05, 0.12, 0.0167, 1250.0, 0.0, 0.0, 0.0]]
+        and [c["label"] for c in particles["columns"]]
+        == ["note", "x", "y", "z", "diameter", "density", "vx", "vy", "vz"],
+        (notes["value"], particles["value"], particles["columns"]),
     )
 
     # The physical-properties card is one card over three `constant/` dictionaries,
     # which is why the header reads the files off its items: what is worth pinning
     # is that they are grouped as one and that all three are writable.
+    #
+    # It also carries everything a phase *has* that follows from its
+    # `transportModel` line -- its `nu`, the coefficients of any other model,
+    # and its density -- and the panel unfolds those from that row rather than
+    # laying them out in the card.  Both phases here run Newtonian, so the 20
+    # coefficients each of the other five models would need are all `inactive`:
+    # located, belonging to a model nobody selected, and neither editable nor
+    # written.
     phys = [p for p in payload["params"] if p["card"] == "Physical properties"]
+    owned = [p for p in phys if p["owner"]]
+    coeffs = [p for p in owned if p["block"]]
+    plain = [p for p in phys if not p["owner"]]
     t(
         "the physical properties are one card over three dictionaries",
-        len(phys) == 9
-        and {p["source"]["file"] for p in phys}
+        len(plain) == 5
+        and {p["source"]["file"] for p in plain}
         == {
             "CFD/constant/transportProperties",
             "CFD/constant/turbulenceProperties",
             "CFD/constant/g",
         }
-        and all(p["status"] == "ok" and p["editable"] for p in phys),
-        [(p["id"], p["status"]) for p in phys] or len(phys),
+        and all(p["status"] == "ok" and p["editable"] for p in plain),
+        [(p["id"], p["status"]) for p in plain] or len(plain),
+    )
+    t(
+        "each phase's parameters follow from its transportModel line",
+        len(owned) == 44
+        and all(
+            p["owner"]
+            == ("phys.water.transportModel" if p["id"].startswith("phys.water.") else "phys.air.transportModel")
+            for p in owned
+        ),
+        [(p["id"], p["owner"]) for p in owned],
+    )
+    t(
+        "none of the coefficients is live while both phases run Newtonian",
+        len(coeffs) == 40
+        and all(p["status"] == "inactive" and p["editable"] is False for p in coeffs),
+        [(p["id"], p["status"]) for p in coeffs if p["status"] != "inactive"] or len(coeffs),
+    )
+    t(
+        "every coefficient names the model and block it belongs to",
+        all(p["model"] in p["id"] and p["block"] == f"{p['model']}Coeffs" for p in coeffs)
+        and {p["id"]: p["model"] for p in owned if p["block"] is None}
+        == {
+            "phys.water.nu": "Newtonian",
+            "phys.air.nu": "Newtonian",
+            # Density is owned but model-less: it belongs to the row and is read
+            # under every model, so no switch can turn it off.
+            "phys.water.rho": None,
+            "phys.air.rho": None,
+        },
+        [p["id"] for p in coeffs if not p["model"]],
     )
     t(
         "every dictionary the panel can show has a label to title its card with",
@@ -353,7 +448,7 @@ def _derive(api: Client) -> None:
 def _preview(api: Client, dem: Path, original: bytes) -> None:
     pv = api.post(
         "/api/case/preview",
-        {"path": CASE_REL, "edits": [{"id": "dem.diameter", "value": 0.02}]},
+        {"path": CASE_REL, "edits": [particle_edit(0.02)]},
     )
     changed = [d for d in pv["diffs"] if not d["byte_identical"]]
     t("preview reports exactly 1 changed file", len(changed) == 1, [d["file"] for d in pv["diffs"]])
@@ -368,7 +463,7 @@ def _preview(api: Client, dem: Path, original: bytes) -> None:
 def _apply(api: Client, dem: Path, original: bytes, original_crlf: int) -> None:
     ap = api.post(
         "/api/case/apply",
-        {"path": CASE_REL, "edits": [{"id": "dem.diameter", "value": 0.02}]},
+        {"path": CASE_REL, "edits": [particle_edit(0.02)]},
     )
     t("apply writes 1 file", len(ap["written"]) == 1, ap["written"])
     t("apply is not a no-op", ap["is_noop"] is False)
@@ -385,8 +480,8 @@ def _apply(api: Client, dem: Path, original: bytes, original_crlf: int) -> None:
     t("line count unchanged", len(after.split(b"\n")) == len(original.split(b"\n")))
 
     reread = api.get(f"/api/case?path={CASE_REL}")
-    got = next(p["value"] for p in reread["params"] if p["id"] == "dem.diameter")
-    t("read-back equals the written value", abs(float(got) - 0.02) < 1e-12, got)
+    got = next(p["value"] for p in reread["params"] if p["id"] == "dem.particles")
+    t("read-back equals the written value", abs(float(got[0][4]) - 0.02) < 1e-12, got)
 
 
 def _revert(api: Client, dem: Path, original: bytes) -> None:
@@ -395,8 +490,8 @@ def _revert(api: Client, dem: Path, original: bytes) -> None:
     t("revert reports the restored file", len(rv["restored"]) == 1, rv["restored"])
 
     reread = api.get(f"/api/case?path={CASE_REL}")
-    got = next(p["value"] for p in reread["params"] if p["id"] == "dem.diameter")
-    t("read-back after revert shows the original value", abs(float(got) - 0.0167) < 1e-9, got)
+    got = next(p["value"] for p in reread["params"] if p["id"] == "dem.particles")
+    t("read-back after revert shows the original value", abs(float(got[0][4]) - 0.0167) < 1e-9, got)
 
 
 def _product(api: Client) -> None:
@@ -564,7 +659,7 @@ def _toggle(api: Client, dem: Path, original: bytes) -> None:
 def _noop(api: Client, dem: Path, original: bytes) -> None:
     ap = api.post(
         "/api/case/apply",
-        {"path": CASE_REL, "edits": [{"id": "dem.diameter", "value": 0.0167}]},
+        {"path": CASE_REL, "edits": [particle_edit(0.0167)]},
     )
     t("writing the original value back is a no-op", ap["is_noop"] is True, ap["changed_files"])
     t("bytes unchanged after the no-op", dem.read_bytes() == original)
@@ -821,7 +916,7 @@ def _unfamiliar(api: Client) -> None:
         and all(
             p["status"] == "unused"
             for p in payload["params"]
-            if p["id"] in ("dem.pos", "dem.diameter", "dem.density", "dem.velocity")
+            if p["id"] in ("dem.zone_notes", "dem.particles")
         )
         and not (unused_ids & unrecognized_ids),
         sorted(unused_ids & unrecognized_ids) or nspheres,

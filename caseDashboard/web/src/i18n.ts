@@ -28,7 +28,6 @@ export type Vars = Record<string, string | number>;
 const ZH_UI: Record<string, string> = {
   // -- top bar --
   "CFDEMInterFoamIB · Case dashboard": "CFDEMInterFoamIB · 算例仪表盘",
-  "Case parameter dashboard": "算例参数仪表盘",
   "{n} errors": "{n} 项错误",
   "{n} warnings": "{n} 项警告",
   "Checks pass": "校验通过",
@@ -52,12 +51,13 @@ const ZH_UI: Record<string, string> = {
   "{a}/{b} parameters recognized": "已识别 {a}/{b} 项参数",
   "Current": "当前",
 
-  // -- open project --
+  // -- file menu --
+  "File": "文件",
   "Switch to another case folder": "切换到另一个算例文件夹",
+  "Currently open project": "当前正在打开的项目",
   "Open project": "打开新项目",
-  "Cases found by the scan": "扫描到的算例",
+  "Choose a detected case": "选择自动识别的项目",
   "No cases were found.": "没有扫描到任何算例。",
-  "Or type a path": "或直接输入路径",
   "Browse…": "浏览…",
   "Browse folders in the page": "在页面里逐级浏览文件夹",
   "Check and open": "校验并打开",
@@ -180,6 +180,25 @@ const ZH_UI: Record<string, string> = {
   "Not found": "无法定位",
   "The pattern did not match exactly once, so it cannot be written safely":
     "正则未能恰好命中一次，为安全起见不可写入",
+  "Parameters": "参数",
+  "The parameters the selected model is written with": "所选模型要用到的参数",
+  "{n} rows": "{n} 行",
+  "The rows of this table, in the order the file lists them":
+    "表格的各行，文件里的排列顺序",
+  "Add": "新增",
+  "Remove last": "删除末端",
+  "Add a row at the end of the table": "在表格末尾新增一行",
+  "Take the last row off the end of the table": "删除表格末尾的一行",
+  // -- table column headings (a particle's note and its eight numbers) --
+  "note": "备注",
+  "diameter": "直径",
+  "density": "密度",
+  "{n} marker points": "{n} 个标记点",
+  "The macros the mesh's corners are built from; unfold to list them":
+    "网格角点由这些宏搭建，展开后按宏名罗列",
+  "Will be created when you apply": "写入时创建",
+  "Not in the file yet; it is written when applied":
+    "文件中还没有这一行，执行写入时会一并创建",
 
   // -- write preview --
   "Write preview": "写入预览",
@@ -211,8 +230,8 @@ const ZH_UI: Record<string, string> = {
   "Reading the case…": "正在读取算例…",
   "No usable case was found.": "未找到可用算例。",
   "A case needs a": "算例需要有",
-  ", anywhere on disk. If nothing here matches, browse to one or type its path under Open project in the top bar.":
-    "，位置不限。若这里没有匹配项，可用顶栏「打开新项目」浏览或直接输入路径。",
+  ", anywhere on disk. If nothing here matches, browse to one or type its path under File in the top bar.":
+    "，位置不限。若这里没有匹配项，可用顶栏「文件」浏览或直接输入路径。",
 
   // -- toasts --
   "Start-up failed": "初始化失败",
@@ -245,12 +264,13 @@ const ZH_UI: Record<string, string> = {
 
 /** Parameter names, keyed by parameter id. */
 const ZH_PARAM: Record<string, string> = {
-  "mesh.xco1": "域 x 最小/最大值",
-  "mesh.yco1": "域 y 最小/最大值",
-  "mesh.zco1": "域 z 最小/最大值",
+  "mesh.xco1": "关键标记点",
+  "mesh.yco1": "y 轴向标记点",
+  "mesh.zco1": "z 轴向标记点",
   "mesh.xco2": "域 x 最大值",
   "mesh.yco2": "域 y 最大值",
   "mesh.zco2": "域 z 最大值",
+  "mesh.vertices": "顶点",
   "mesh.cells": "单元数",
   "mesh.sf.xmin": "初始水盒 x 下/上界",
   "mesh.sf.ymin": "初始水盒 y 下/上界",
@@ -277,12 +297,11 @@ const ZH_PARAM: Record<string, string> = {
   "run.maxDeltaT": "最大时间步上限",
   "run.nrProcs": "MPI 进程数",
   "run.solverName": "求解器可执行文件",
-  "phys.water.transportModel": "水的黏度模型",
-  "phys.water.nu": "水的运动黏度",
-  "phys.water.rho": "水的密度",
-  "phys.air.transportModel": "空气的黏度模型",
-  "phys.air.nu": "空气的运动黏度",
-  "phys.air.rho": "空气的密度",
+  "phys.water.transportModel": "水 (第1相流体) 的黏度模型",
+  "phys.air.transportModel": "空气 (第2相流体) 的黏度模型",
+  // `phys.water.rho` / `phys.air.rho` are deliberately absent: the density box
+  // is labelled `rho` in both languages, because that is the keyword the file
+  // spells -- the same reason the coefficients carry their own names.
   "phys.sigma": "表面张力",
   "phys.turbulence": "湍流模型",
   "phys.g": "重力",
@@ -314,10 +333,8 @@ const ZH_PARAM: Record<string, string> = {
   "dem.processors": "进程分解",
   "dem.couple_every": "couple_every (DEM 步)",
   "dem.integr": "积分方式",
-  "dem.pos": "初始位置",
-  "dem.diameter": "直径",
-  "dem.density": "密度",
-  "dem.velocity": "初速度",
+  "dem.zone_notes": "备注",
+  "dem.particles": "颗粒信息",
   "dem.ms.seed": "模板随机种子",
   "dem.ms.atom_type": "atom 类型",
   "dem.ms.density": "密度",
@@ -450,6 +467,7 @@ const ZH_CARD: Record<string, string> = {
   "Variables": "变量",
   "Wall settings": "壁面内置平面 wall 设置",
   "Particle type and creation": "颗粒类型与创建设置",
+  "Single particle creation": "单粒子创建",
   "Output control": "输出控制",
 };
 

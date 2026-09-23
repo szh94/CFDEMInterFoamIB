@@ -4,11 +4,11 @@ thermo_log              ../log/log_thermo.txt
 
 #变量定义
 variable            xmin           equal   0.0
-variable            xmax           equal   0.24
+variable            xmax           equal   0.01
 variable            ymin           equal   0.0
-variable            ymax           equal   0.24
+variable            ymax           equal   0.01
 variable            zmin           equal   0
-variable            zmax           equal   0.4
+variable            zmax           equal   0.04
     
 variable            posx           equal   ${xmax}/2
 variable            posy           equal   ${ymax}/2
@@ -17,8 +17,8 @@ variable            vx             equal   0.0
 variable            vy             equal   0.0
 variable            vz             equal   0.0
     
-variable            timestep       equal   2.5e-05
-variable            outSteps       equal   400
+variable            timestep       equal   0.00001
+variable            outSteps       equal   500
 ##################################################
 
 atom_style          granular
@@ -68,11 +68,14 @@ fix                 zwalls1 all wall/gran model hertz tangential history primiti
 fix                 cfd  all couple/cfd couple_every 20 mpi
 fix                 cfd2 all couple/cfd/force
 
-#create_atoms_zone
-#create single partciles
-#notes_p1: single sphere
-create_atoms       1 single 0.12 0.12 0.36  units box
-set                atom 1 diameter 0.04 density 1958.8 vx 0 vy 0 vz 0
+# create_atoms_zone
+# create two partciles, in tandem along the fall direction (z): the leading one sits two diameters below the trailing one, so its wake acts on it
+# notes_p1: trailing particle -- the single-sphere case's own starting point
+create_atoms       1 single 0.005 0.005 0.035  units box
+set                atom 1 diameter 0.00167 density 1140 vx 0 vy 0 vz 0
+# notes_p2: leading particle -- 0.002 m (2 diameters) below it
+create_atoms       1 single 0.005 0.005 0.0316  units box
+set                atom 2 diameter 0.00167 density 1140 vx 0 vy 0 vz 0
 
 #apply nve integration to all particles that are inserted as single particles
 fix                 integr all nve/sphere

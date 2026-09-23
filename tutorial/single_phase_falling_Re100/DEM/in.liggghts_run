@@ -68,7 +68,9 @@ fix                 zwalls1 all wall/gran model hertz tangential history primiti
 fix                 cfd  all couple/cfd couple_every 20 mpi
 fix                 cfd2 all couple/cfd/force
 
+#create_atoms_zone
 #create single partciles
+#notes_p1: single sphere
 create_atoms       1 single 0.003 0.003 0.018  units box
 set                atom 1 diameter 0.001 density 1820.5 vx 0 vy 0 vz 0
 

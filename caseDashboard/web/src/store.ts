@@ -181,11 +181,17 @@ export interface EditorSession {
   sha: string;
 }
 
-/** Numeric comparison so `0.1` typed by hand equals `0.1` read from the file. */
+/** Numeric comparison so `0.1` typed by hand equals `0.1` read from the file.
+ *
+ * Recursive, because a `repeats` param's value is a table of rows: the elements
+ * of the outer array are themselves arrays, and comparing those with `numEq`
+ * would fall through to `String([...])` and call two tables with the same
+ * numbers spelled differently unequal.  A row is as wide as its param's
+ * `columns`, so nothing here may assume three. */
 export function valuesEqual(a: ParamValue, b: ParamValue): boolean {
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b)) return false;
-    return a.length === b.length && a.every((x, i) => numEq(x, b[i]));
+    return a.length === b.length && a.every((x, i) => valuesEqual(x, b[i]));
   }
   if (typeof a === "number" && typeof b === "number") return numEq(a, b);
   if (typeof a === "boolean" || typeof b === "boolean") return a === b;

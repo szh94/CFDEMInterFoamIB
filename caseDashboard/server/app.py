@@ -630,7 +630,8 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "error": "Frontend not built yet",
                     "hint": "In development, open the Vite port (5173 by default); "
-                            "otherwise run `python caseDashboard/run.py --prod` to build first.",
+                            "otherwise run `python caseDashboard/launcher/run.py --prod` "
+                            "to build first.",
                     "dist": str(DIST_DIR),
                 },
                 200,

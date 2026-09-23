@@ -17,21 +17,34 @@ optional Chinese layer lives in the frontend, keyed by parameter id.
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-from .schema import Param, ParamGroup
+from .schema import Column, Param, ParamGroup
 
 NUM = r"[0-9.eE+\-]+"
 REAL_NUM = r"[0-9.eE+\-]+"
 
+#: The DEM deck's particle block: the marker line every particle of the
+#: single-sphere route is written under, and the line the reader and the writer
+#: both locate the block by.
+PARTICLE_ZONE = "create_atoms_zone"
+
 
 def _scalar(pid: str, group: str, file: str, key: str, **kw) -> Param:
-    """Rule for ``key <value>;`` with an optional trailing comment."""
+    """Rule for ``key <value>;`` with an optional trailing comment.
+
+    The keyword is recorded on the ``Param`` as well as folded into the pattern:
+    it is what the file calls this line, which is what a macro written as
+    ``$key`` elsewhere in the same file resolves *to* -- that is how the vertex
+    table's ``$xco1`` finds the rule that owns the domain extent (see
+    ``_MACRO_PARAMS``).
+    """
     return Param(
         id=pid,
         group=group,
         file=file,
         pattern=rf"^(?P<pre>\s*{key}\s+)(?P<val>{NUM})(?P<post>\s*;.*)$",
+        key=key,
         **kw,
     )
 
@@ -61,48 +74,73 @@ def _triple(pid: str, group: str, file: str, head: str, tail: str, sep, **kw) ->
 # 1. mesh
 # --------------------------------------------------------------------------
 
-#: The blockMeshDict half of the fluid side: the six extents and the cell
-#: counts.  Declaration order doubles as display order, and an extent's two ends
-#: are shown on one row: each ``co1`` names its ``co2`` through ``partners``, so
-#: the panel puts the min and max boxes side by side and the grid reads one axis
-#: per row.  The grouping only works while the named partners follow their owner
-#: in this list -- it is declared on the first of the group and the panel folds
-#: in whichever params the names point at -- so keep ``co2`` right after its
-#: ``co1``.
+#: The blockMeshDict half of the fluid side: the six extents, the corner table
+#: and the cell counts.  Declaration order doubles as display order, and the six
+#: extents are one *group* rather than six rows: the dictionary writes them as
+#: six macros above ``vertices``, and that is exactly what the panel's fold
+#: unfolds -- each macro under the name the file gives it (``xco1``, ``yco2``
+#: ...), in the order listed here.  The grouping works only while the named
+#: partners are in the same card -- it is declared on the first of the group and
+#: the panel folds in whichever params the names point at -- so all five others
+#: are named there, in the order the dictionary defines them.
 #:
 #: The initial field and the decomposition live in ``FIELD_PARAMS`` below rather
 #: than here for one reason: a card follows the order of the parameters in its
-#: group, and the physical properties are meant to sit between the mesh and
-#: everything else.
+#: group, so a file's card lands wherever its first parameter is declared, and
+#: the mesh is meant to come after the physical properties (see ``GROUPS``).
 MESH_PARAMS: List[Param] = [
     _scalar(
         "mesh.xco1", "fluid", "CFD/system/blockMeshDict", "xco1",
-        vtype="float", unit="m", label="Domain x min/max", default=0.0,
-        partners=("mesh.xco2",),
-        help="blockMeshDict vertex macro; must equal the DEM region's xmin.",
-    ),
-    _scalar(
-        "mesh.yco1", "fluid", "CFD/system/blockMeshDict", "yco1",
-        vtype="float", unit="m", label="Domain y min/max", default=0.0,
-        partners=("mesh.yco2",),
-    ),
-    _scalar(
-        "mesh.zco1", "fluid", "CFD/system/blockMeshDict", "zco1",
-        vtype="float", unit="m", label="Domain z min/max", default=0.2,
-        partners=("mesh.zco2",),
-        help="The demo case's domain does not start at 0; setFields/DEM coordinates are absolute.",
+        vtype="float", unit="m", label="Key marker points", default=0.0,
+        partners=(
+            "mesh.xco2", "mesh.yco1", "mesh.yco2", "mesh.zco1", "mesh.zco2",
+        ),
+        collapsible=True,
+        help="The macros the mesh's corners are written from -- the two "
+             "coordinates of each axis, which are also the DEM region's bounds.",
     ),
     _scalar(
         "mesh.xco2", "fluid", "CFD/system/blockMeshDict", "xco2",
         vtype="float", unit="m", label="Domain x max", default=0.1,
     ),
     _scalar(
+        "mesh.yco1", "fluid", "CFD/system/blockMeshDict", "yco1",
+        vtype="float", unit="m", label="Y-axis marker points", default=0.0,
+    ),
+    _scalar(
         "mesh.yco2", "fluid", "CFD/system/blockMeshDict", "yco2",
         vtype="float", unit="m", label="Domain y max", default=0.1,
     ),
     _scalar(
+        "mesh.zco1", "fluid", "CFD/system/blockMeshDict", "zco1",
+        vtype="float", unit="m", label="Z-axis marker points", default=0.2,
+        help="The demo case's domain does not start at 0; setFields/DEM coordinates are absolute.",
+    ),
+    _scalar(
         "mesh.zco2", "fluid", "CFD/system/blockMeshDict", "zco2",
         vtype="float", unit="m", label="Domain z max", default=0.4,
+    ),
+    #: The eight corners the mesh is built from, one line each: a *table*, not a
+    #: value (``Param.repeats``), so the panel shows one row per line with the
+    #: vertex number in front of the three boxes.  Each component is normally a
+    #: macro -- ``($xco1 $yco1 $zco1)`` -- which the reader resolves through the
+    #: definitions above, so the boxes show the coordinates the mesh will really
+    #: be built with and follow an edit to the domain extents as it is typed.
+    #: Editing a box writes that one number in place of that one token, leaving
+    #: the other five components of the corner as macros.
+    #:
+    #: No ``unit``: these coordinates are in whatever ``convertToMeters`` scales
+    #: the dictionary by, so `/m` would be a lie in a case that scales.
+    #: Declared here to match the file's own order, which is also the order the
+    #: card reads in.
+    Param(
+        id="mesh.vertices", group="fluid", file="CFD/system/blockMeshDict",
+        scope=r"^vertices\s*$", scope_style="paren",
+        pattern=r"^\s*\(\s*(?P<valx>\S+)\s+(?P<valy>\S+)\s+(?P<valz>\S+)\s*\)",
+        vtype="float3", repeats=True, compact=True, row_seed=[0.0, 0.0, 0.0],
+        label="Vertices", default=[0.0, 0.0, 0.0],
+        help="The mesh's corner points, one line each; changing a box writes "
+             "that number where the file had its macro.",
     ),
     Param(
         id="mesh.cells", group="fluid", file="CFD/system/blockMeshDict",
@@ -131,15 +169,69 @@ _FILE_G = "CFD/constant/g"
 #: cards of two numbers each next to one another.
 _CARD_PHYS = "Physical properties"
 
-#: The viscosity models this dictionary can name.  A case using one that is not
-#: listed still opens: the panel appends the value it cannot offer, and the
-#: writer only ever refuses a value that was not in the list to begin with.
+#: The viscosity models this dictionary can name -- the six OpenFOAM 5.x
+#: actually defines.  A case using one that is not listed still opens: the panel
+#: appends the value it cannot offer, and the writer only ever refuses a value
+#: that was not in the list to begin with.  (``strainRateFunction`` is left out
+#: on purpose: it reads its coefficients from a ``Function1`` sub-dictionary,
+#: which is more than a box per number can express.)
 _VISCOSITY_MODELS = [
-    "Newtonian", "CrossPowerLaw", "BirdCarreau", "powerLaw",
-    "HerschelBulkley", "generalizedNewtonian", "strainRateFunction",
+    "Newtonian", "BirdCarreau", "Casson", "CrossPowerLaw",
+    "HerschelBulkley", "powerLaw",
 ]
 
-def _transport(pid: str, key: str, phase: str = "", **kw) -> Param:
+#: Dimension sets, spelled as OpenFOAM writes them between the brackets.
+_DIMS_NU = "0 2 -1 0 0 0 0"    # m2/s
+_DIMS_TIME = "0 0 1 0 0 0 0"   # s
+_DIMS_TAU = "0 2 -2 0 0 0 0"   # m2/s2
+_DIMS_NONE = "0 0 0 0 0 0 0"   # -
+
+#: A non-Newtonian model keeps its coefficients in a ``<model>Coeffs``
+#: sub-dictionary of its own, beside the phase block rather than inside it --
+#: which is why a case running Newtonian has none of them, and why picking one
+#: in the panel means writing a block that was never there.
+#:
+#: Each entry is ``(keyword, unit, dimensions, seed)``.  ``seed`` is what the
+#: coefficient is set to when the block is created: ``True`` takes the phase's
+#: current ``nu``, so building the block reproduces the viscosity the case
+#: already had instead of quietly changing the physics; a number is the value
+#: the coefficient degenerates to -- ``n`` = 1 is plain Newtonian, everything
+#: else drops out of the model at 0.
+_VISCOSITY_COEFFS: Dict[str, List[tuple]] = {
+    "BirdCarreau": [
+        ("nu0", "m2/s", _DIMS_NU, True),
+        ("nuInf", "m2/s", _DIMS_NU, True),
+        ("k", "s", _DIMS_TIME, 0.0),
+        ("n", "-", _DIMS_NONE, 1.0),
+    ],
+    "Casson": [
+        ("m", "m2/s", _DIMS_NU, True),
+        ("tau0", "m2/s2", _DIMS_TAU, 0.0),
+        ("nuMin", "m2/s", _DIMS_NU, True),
+        ("nuMax", "m2/s", _DIMS_NU, True),
+    ],
+    "CrossPowerLaw": [
+        ("nu0", "m2/s", _DIMS_NU, True),
+        ("nuInf", "m2/s", _DIMS_NU, True),
+        ("m", "s", _DIMS_TIME, 0.0),
+        ("n", "-", _DIMS_NONE, 1.0),
+    ],
+    "HerschelBulkley": [
+        ("k", "m2/s", _DIMS_NU, True),
+        ("n", "-", _DIMS_NONE, 1.0),
+        ("tau0", "m2/s2", _DIMS_TAU, 0.0),
+        ("nu0", "m2/s", _DIMS_NU, True),
+    ],
+    "powerLaw": [
+        ("k", "m2/s", _DIMS_NU, True),
+        ("n", "-", _DIMS_NONE, 1.0),
+        ("nuMin", "m2/s", _DIMS_NU, True),
+        ("nuMax", "m2/s", _DIMS_NU, True),
+    ],
+}
+
+
+def _transport(pid: str, word: str, phase: str = "", subdict: str = "", **kw) -> Param:
     """Rule for a dimensioned entry of ``transportProperties``.
 
     An OpenFOAM dimensioned entry repeats its keyword as the name of the
@@ -151,12 +243,31 @@ def _transport(pid: str, key: str, phase: str = "", **kw) -> Param:
     blocks define ``nu`` and ``rho``, so an unscoped rule would be as free to
     land on the air value as on the water one.  ``sigma`` is a top-level entry
     and has no phase.
+
+    ``subdict`` narrows it one level further, into ``<subdict> { ... }`` inside
+    the phase -- the coefficients of a non-Newtonian model, which live in a
+    sub-dictionary rather than in the phase block.  That is what keeps ``nu0``
+    of one model from answering for another's, and the level the writer builds
+    when the model is switched to one the case has never used.
     """
+    scopes = [
+        spec
+        for spec in (
+            rf"^{phase}\s*$" if phase else "",
+            # A sub-dictionary is written *inside* its phase, so unlike the
+            # phase header it is indented -- and a rule that insisted on column
+            # 0 would walk past the very block it is looking for.
+            rf"^\s*{subdict}\s*$" if subdict else "",
+        )
+        if spec
+    ]
     return Param(
         id=pid, group="fluid", file=_FILE_TP, card=_CARD_PHYS,
-        scope=rf"^{phase}\s*$" if phase else None,
+        scope=scopes or None,
+        block=subdict or None,
+        key=word,
         pattern=(
-            rf"^(?P<pre>\s*{key}\s+{key}\s+\[[^\]]*\]\s+)"
+            rf"^(?P<pre>\s*{word}\s+{word}\s+\[[^\]]*\]\s+)"
             rf"(?P<val>{NUM})(?P<post>\s*;.*)$"
         ),
         **kw,
@@ -165,43 +276,94 @@ def _transport(pid: str, key: str, phase: str = "", **kw) -> Param:
 
 def _transport_model(pid: str, phase: str, label: str, **kw) -> Param:
     """The phase's ``transportModel`` line, which names a model rather than a
-    dimensioned number and so needs its own pattern."""
+    dimensioned number and so needs its own pattern.
+
+    It is also what its phase's coefficients are read against
+    (``Param.owner``): which of them exist at all follows from this line, and
+    the panel hangs them off its row.
+    """
     return Param(
         id=pid, group="fluid", file=_FILE_TP, card=_CARD_PHYS,
         scope=rf"^{phase}\s*$",
         pattern=r"^(?P<pre>\s*transportModel\s+)(?P<val>\w+)(?P<post>\s*;.*)$",
         vtype="enum", label=label, options=_VISCOSITY_MODELS, default="Newtonian",
-        help="A non-Newtonian choice also needs its own coefficients in this block.",
+        help="Newtonian keeps its nu in this block. Any other model reads its "
+             "coefficients from a <Model>Coeffs sub-dictionary the panel unfolds "
+             "below -- and writes, seeded from this phase's nu, if the case has "
+             "never had one.",
         **kw,
     )
 
 
+def _phase_density(pid: str, phase: str, default: float, **kw) -> Param:
+    """A phase's ``rho``: an ordinary line of the phase block, listed under the
+    phase's model row.
+
+    Density is not a property of the viscosity model -- ``incompressibleTwoPhaseMixture``
+    reads the same ``rho`` out of the same phase block whichever ``transportModel``
+    is named -- so it carries an ``owner`` (that is what folds it into that row)
+    but no ``model`` (nothing can switch it off).  It is declared *before* the
+    coefficients so that it heads the list: the two phases then read alike, and
+    the one number that is there under every model is the one you see first.
+    """
+    return _transport(
+        pid, "rho", phase,
+        vtype="float", unit="kg/m3", label="rho", default=default,
+        range=[1e-06, 1e06],
+        owner=f"phys.{phase}.transportModel", **kw,
+    )
+
+
+def _viscosity_coeffs(phase: str, nu_id: str) -> List[Param]:
+    """Every coefficient of every non-Newtonian model, for one phase.
+
+    The lines are ordinary dimensioned entries, so they reuse ``_transport``;
+    what is different is that the case may not have them, which is what
+    ``owner``/``model``/``block``/``seed_from`` describe.  The label is the
+    keyword itself -- ``nu0``, ``k``, ``n`` -- because these are the names the
+    file and the solver use, not words to translate.
+    """
+    out: List[Param] = []
+    for model, coeffs in _VISCOSITY_COEFFS.items():
+        for keyword, unit, dims, seed in coeffs:
+            out.append(
+                _transport(
+                    f"phys.{phase}.{model}.{keyword}", keyword, phase,
+                    subdict=f"{model}Coeffs",
+                    owner=f"phys.{phase}.transportModel", model=model,
+                    seed_from=nu_id if seed is True else None,
+                    dims=dims,
+                    vtype="float", unit=unit, label=keyword,
+                    default=None if seed is True else seed,
+                )
+            )
+    return out
+
+
 PHYS_PARAMS: List[Param] = [
-    _transport_model("phys.water.transportModel", "water", "Water transport model"),
+    _transport_model("phys.water.transportModel", "water", "Water (phase 1) viscosity model"),
+    _phase_density("phys.water.rho", "water", 1000.0),
     _transport(
         "phys.water.nu", "nu", "water",
-        vtype="float", unit="m2/s", label="Water kinematic viscosity", default=1e-06,
-        range=[1e-12, 1.0],
+        vtype="float", unit="m2/s", label="nu",
+        owner="phys.water.transportModel", model="Newtonian", dims=_DIMS_NU,
+        default=1e-06, range=[1e-12, 1.0],
         help="1e-06 m2/s is water at about 20 C; it sets the viscous time scale, "
              "and through it how small deltaT has to be.",
     ),
-    _transport(
-        "phys.water.rho", "rho", "water",
-        vtype="float", unit="kg/m3", label="Water density", default=1000.0,
-        range=[1e-06, 1e06],
-    ),
-    _transport_model("phys.air.transportModel", "air", "Air transport model"),
-    _transport(
-        "phys.air.nu", "nu", "air",
-        vtype="float", unit="m2/s", label="Air kinematic viscosity", default=1.78e-05,
-        range=[1e-12, 1.0],
-    ),
-    _transport(
-        "phys.air.rho", "rho", "air",
-        vtype="float", unit="kg/m3", label="Air density", default=1.2,
-        range=[1e-06, 1e06],
+    *_viscosity_coeffs("water", "phys.water.nu"),
+    _transport_model("phys.air.transportModel", "air", "Air (phase 2) viscosity model"),
+    _phase_density(
+        "phys.air.rho", "air", 1.2,
         help="The water/air ratio drives the buoyancy the free surface feels.",
     ),
+    _transport(
+        "phys.air.nu", "nu", "air",
+        vtype="float", unit="m2/s", label="nu",
+        owner="phys.air.transportModel", model="Newtonian", dims=_DIMS_NU,
+        default=1.78e-05, range=[1e-12, 1.0],
+    ),
+    *_viscosity_coeffs("air", "phys.air.nu"),
     _transport(
         "phys.sigma", "sigma",
         vtype="float", unit="N/m", label="Surface tension", default=0.07,
@@ -599,6 +761,14 @@ _CARD_WALL = "Wall settings"
 #: show both without reporting the route a case does not use as a broken rule.
 _CARD_CREATE = "Particle type and creation"
 
+#: The ``create_atoms`` route alone: the block's own note and the particle
+#: table that belongs to it.  It is a card of its own rather than a corner of
+#: the one above because it *is* the whole of what creating a single particle
+#: is -- and because the other route's parameters sit in the card above, so
+#: folding the two together would title a multisphere deck's creation settings
+#: after the route it does not take.
+_CARD_SINGLE = "Single particle creation"
+
 #: LIGGGHTS ``variable <name> equal <value>`` definitions.  They are constants
 #: for the rest of the deck rather than commands in their own right, so they get
 #: their own card instead of being mixed in with the region and fix lines they
@@ -737,44 +907,6 @@ DEM_PARAMS: List[Param] = [
         options=["multisphere", "nve/sphere"], default="nve/sphere",
         help="Use nve/sphere for a single sphere and multisphere for a clump.",
     ),
-    # -- single-sphere route: create_atoms + set atom -----------------------
-    _triple(
-        "dem.pos", "particle", _FILE_DEM,
-        head=r"\s*create_atoms\s+1\s+single\s+", tail=r"\s+units\s+box.*",
-        sep=(r"\s+", r"\s+"),
-        card=_CARD_CREATE, alt="single",
-        vtype="float3", unit="m", label="Initial position", default=[0.05, 0.05, 0.33],
-        compact=True,
-        help="Absolute coordinates; should lie inside the DEM region and usually below the water surface.",
-    ),
-    Param(
-        id="dem.diameter", group="particle", file=_FILE_DEM,
-        card=_CARD_CREATE, alt="single",
-        pattern=(
-            rf"^(?P<pre>\s*set\s+atom\s+1\s+diameter\s+)(?P<val>{NUM})"
-            rf"(?P<post>\s+density\s+{NUM}\s+vx.*)$"
-        ),
-        vtype="float", unit="m", label="Diameter", default=0.0167,
-        help="Determines cells/diameter and whether the particle spans mesh cells.",
-    ),
-    Param(
-        id="dem.density", group="particle", file=_FILE_DEM,
-        card=_CARD_CREATE, alt="single",
-        pattern=(
-            rf"^(?P<pre>\s*set\s+atom\s+1\s+diameter\s+{NUM}\s+density\s+)(?P<val>{NUM})"
-            rf"(?P<post>\s+vx.*)$"
-        ),
-        vtype="float", unit="kg/m3", label="Density", default=1500,
-    ),
-    _triple(
-        "dem.velocity", "particle", _FILE_DEM,
-        head=rf"\s*set\s+atom\s+1\s+diameter\s+{NUM}\s+density\s+{NUM}\s+vx\s+",
-        tail=r"\s*",
-        sep=(r"\s+vy\s+", r"\s+vz\s+"),
-        card=_CARD_CREATE, alt="single",
-        vtype="float3", unit="m/s", label="Initial velocity", default=[0.0, 0.0, 0.0],
-        compact=True,
-    ),
     # -- multisphere route: particletemplate/multisphere + insert/pack -------
     _ms(
         "dem.ms.seed", r"\s*fix\s+pts1\s+all\s+particletemplate/multisphere\s+",
@@ -881,6 +1013,67 @@ DEM_PARAMS: List[Param] = [
         "dem.ms.ntry_mc", r"\s*ntry_mc\s+", r"\d+", r"\s*$",
         vtype="int", label="Monte Carlo attempts", default=10000,
     ),
+    # -- single-sphere route: the `#create_atoms_zone` block ----------------
+    #: Declared after the other route so the card below is one unbroken run of
+    #: parameters (the panel opens a new card wherever the title changes, so a
+    #: card declared in the middle of another would be split in two).
+    #:
+    #: The marker line the block starts at.  Everything between it and the first
+    #: blank line is the block: comment lines (the block's own note, then one
+    #: ``#notes_pN:`` lead line per particle) and the ``create_atoms`` /
+    #: ``set atom`` pair that belongs to each of them.  The block is the one
+    #: place in the decks where the *count* is the thing being edited, so the
+    #: block is bounded by the marker rather than by "the line matched twice".
+    Param(
+        id="dem.zone_notes", group="particle", file=_FILE_DEM,
+        card=_CARD_SINGLE, alt="single",
+        # Matched by ``reader._resolve_zone_notes`` rather than by this regex,
+        # which is only here so the declaration reads like every other rule.
+        pattern=rf"^\s*#\s*{PARTICLE_ZONE}\s*$",
+        vtype="text", label="Note", default=[],
+        help="Free-form comments inside the particle block; kept as they are written, one entry per line.",
+    ),
+    #: The particle table: one row per particle, three lines each.  The anchor
+    #: is the ``#notes_pN:`` lead line -- it carries the note and the number,
+    #: and the number is captured as ``valid`` so the writer can renumber the
+    #: rows by position when one is added or removed.  The ``set atom`` id is
+    #: captured the same way.
+    Param(
+        id="dem.particles", group="particle", file=_FILE_DEM,
+        card=_CARD_SINGLE, alt="single",
+        pattern=rf"^(?P<pre>\s*#\s*notes_p)(?P<valid>\d+)(?P<mid>:\s*)(?P<valnote>.*)$",
+        repeats=True,
+        label="Particle info", default=[],
+        row_columns=(Column("valnote", "text", "note"),),
+        row_lines=(
+            (
+                rf"^(?P<pre>\s*create_atoms\s+1\s+single\s+)(?P<valx>{NUM})"
+                rf"(?P<mid1>\s+)(?P<valy>{NUM})(?P<mid2>\s+)(?P<valz>{NUM})"
+                rf"(?P<post>\s+units\s+box.*)$",
+                (
+                    Column("valx", "float", "x", "m"),
+                    Column("valy", "float", "y", "m"),
+                    Column("valz", "float", "z", "m"),
+                ),
+            ),
+            (
+                rf"^(?P<pre>\s*set\s+atom\s+)(?P<valid>\d+)(?P<mid1>\s+diameter\s+)"
+                rf"(?P<vald>{NUM})(?P<mid2>\s+density\s+)(?P<valrho>{NUM})"
+                rf"(?P<mid3>\s+vx\s+)(?P<valvx>{NUM})(?P<mid4>\s+vy\s+)(?P<valvy>{NUM})"
+                rf"(?P<mid5>\s+vz\s+)(?P<valvz>{NUM})(?P<post>\s*)$",
+                (
+                    Column("vald", "float", "diameter", "m"),
+                    Column("valrho", "float", "density", "kg/m3"),
+                    Column("valvx", "float", "vx", "m/s"),
+                    Column("valvy", "float", "vy", "m/s"),
+                    Column("valvz", "float", "vz", "m/s"),
+                ),
+            ),
+        ),
+        help="One row per particle: its note, where it is created, and its diameter, "
+             "density and initial velocity. Adding a row appends a particle and "
+             "renumbers the block.",
+    ),
     # Walls mirror the CFD domain; they are the DEM side of the domain
     # consistency check.  One axis is one row, as the domain extents are: the
     # lower wall names the upper through ``partners``, and each box keeps its
@@ -928,6 +1121,33 @@ ALL_PARAMS: List[Param] = (
 )
 
 
+def _macro_params() -> Dict[Tuple[str, str], str]:
+    """``(file, keyword) -> param id``, for the macros a file defines.
+
+    ``blockMeshDict`` writes each corner once -- ``xco1 0;`` -- and then spells
+    the vertex table with ``$xco1``.  That makes the two the same number under
+    two names, which is a link worth showing: the panel carries an edit of the
+    domain extent straight into the vertex boxes that mention it.  The map is
+    built from the rules rather than typed out, so a rule that is renamed or
+    withdrawn cannot leave a stale entry behind.
+
+    A keyword two rules of one file share (``nu``, once per phase) keeps the
+    *first* one.  Nothing in a macro-naming file collides, and picking a side
+    silently beats letting the last one win: which phase's ``nu`` a bare ``$nu``
+    would mean is not a question the file answers either.
+    """
+    out: Dict[Tuple[str, str], str] = {}
+    for p in ALL_PARAMS:
+        if p.key:
+            out.setdefault((p.file, p.key), p.id)
+    return out
+
+
+#: Read by ``reader.resolve_param`` to fill a table row's ``sources``; see
+#: ``_macro_params`` and ``Param.repeats``.
+_MACRO_PARAMS: Dict[Tuple[str, str], str] = _macro_params()
+
+
 def _files_of(params: List[Param]) -> List[str]:
     seen: List[str] = []
     for p in params:
@@ -951,7 +1171,9 @@ GROUPS: List[ParamGroup] = [
             "blockMeshDict · transportProperties · turbulenceProperties · g · "
             "setFieldsDict · decomposeParDict · controlDict · parCFDDEMrun.sh"
         ),
-        params=MESH_PARAMS + PHYS_PARAMS + FIELD_PARAMS + RUN_PARAMS,
+        #: The physical properties lead the page: what the fluid *is* comes
+        #: before the box it is put in.
+        params=PHYS_PARAMS + MESH_PARAMS + FIELD_PARAMS + RUN_PARAMS,
     ),
     ParamGroup(
         id="particle", label="Particle",

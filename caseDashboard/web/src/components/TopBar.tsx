@@ -1,9 +1,28 @@
 import { useMemo } from "react";
 import { useStore } from "../store";
 import { useLiveEdits, useT } from "../hooks";
-import { CaseSelector } from "./CaseSelector";
-import { OpenProject } from "./OpenProject";
+import { FileMenu } from "./FileMenu";
 import { IconDiff, IconGlobe, IconSpinner, IconTheme, IconUndo } from "./Icons";
+
+/**
+ * Fixed widths for the controls whose own text is not fixed, one entry per
+ * language, content centred inside the box.
+ *
+ * Left to size themselves they shove their neighbours around: the level pill
+ * flips between "Checks pass" and "12 warnings" while you type, and the style
+ * button between "Default" and "Light".
+ *
+ * One width per language rather than one shared: the Chinese labels are much
+ * shorter, and sizing both to the English maximum left 「回滚」 in a box with
+ * 30px of dead space around it.
+ *
+ * Measured at 1560px -- widest state of each, EN / ZH: the pill 76.5 / 65.9,
+ * Roll back 88.6 / 65, the style button 79.3 / 65.  Each box carries a few px
+ * of slack; a label that does not fit would wrap and burst the 32px row.
+ */
+const W_LEVEL_PILL = { en: "w-[5rem]", zh: "w-[4.4rem]" };
+const W_ROLL_BACK = { en: "w-[6rem]", zh: "w-[4.4rem]" };
+const W_THEME = { en: "w-[5.2rem]", zh: "w-[4.4rem]" };
 
 export function TopBar() {
   const payload = useStore((s) => s.payload);
@@ -34,30 +53,19 @@ export function TopBar() {
 
   return (
     <header className="glass-bar z-20 flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
-      {/* The brand is one block in the accent tint the "IB" mark used to carry,
-          sized like every control to its right.  A div, not a button -- nothing
-          here is clickable. */}
-      <div className="flex h-8 shrink-0 items-center rounded-md bg-accent/15 px-2.5 ring-1 ring-accent/30">
-        <div className="leading-tight">
-          <div className="text-[13px] font-semibold tracking-tight text-accent">
-            CFDEMInterFoamIB
-          </div>
-          <div className="text-[10px] text-ink-3">{t.t("Case parameter dashboard")}</div>
-        </div>
-      </div>
-
-      <div className="h-6 w-px bg-line" />
+      {/* No brand block: the window title already reads "CFDEMInterFoamIB · Case
+          dashboard" (`store.setLang` writes it), and in the application window
+          the title bar shows it a few pixels above this row. */}
 
       {/* A single `h-8` across the row rather than `items-stretch`: the case
           chip carries two lines and would otherwise set the cross size, making
-          the level pill and Open project taller than the action buttons. */}
+          the File menu taller than the action buttons. */}
       <div className="flex items-center gap-3">
-        <OpenProject />
-        <CaseSelector />
+        <FileMenu />
 
         {levelPill && (
           <span
-            className={`flex h-8 items-center rounded border px-2 text-[11px] ${levelPill.cls}`}
+            className={`flex h-8 ${W_LEVEL_PILL[lang]} shrink-0 items-center justify-center rounded border px-2 text-[11px] ${levelPill.cls}`}
           >
             {levelPill.text}
           </span>
@@ -97,7 +105,7 @@ export function TopBar() {
       <button
         onClick={requestRevert}
         disabled={busy || !payload}
-        className="btn-glass flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] text-ink-2 transition hover:text-ink disabled:opacity-35"
+        className={`btn-glass flex h-8 ${W_ROLL_BACK[lang]} shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[12px] text-ink-2 transition hover:text-ink disabled:opacity-35`}
         title={t.t("Restore the files from the last snapshot")}
       >
         <IconUndo width={13} height={13} />
@@ -119,7 +127,7 @@ export function TopBar() {
           names the style the panel is in, not the one the click would move to. */}
       <button
         onClick={() => void setTheme(theme === "light" ? "default" : "light")}
-        className="btn-glass flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] text-ink-2 transition hover:text-ink"
+        className={`btn-glass flex h-8 ${W_THEME[lang]} shrink-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-[12px] text-ink-2 transition hover:text-ink`}
         title={t.t(
           theme === "light" ? "Switch to the default style" : "Switch to the light style",
         )}

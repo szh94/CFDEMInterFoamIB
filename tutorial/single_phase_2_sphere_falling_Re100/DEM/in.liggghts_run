@@ -69,7 +69,7 @@ fix                 cfd  all couple/cfd couple_every 20 mpi
 fix                 cfd2 all couple/cfd/force
 
 # create_atoms_zone
-# create two partciles, in tandem along the fall direction (z): the leading one sits two diameters below the trailing one, so its wake acts on it
+# create two particles, in tandem along the fall direction z: the leading one sits two diameters below the trailing one, so its wake acts on it
 # notes_p1: trailing particle -- the single-sphere case's own starting point
 create_atoms       1 single 0.005 0.005 0.035  units box
 set                atom 1 diameter 0.00167 density 1140 vx 0 vy 0 vz 0
